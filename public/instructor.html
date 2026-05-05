@@ -144,7 +144,7 @@ select{background:var(--sf);color:var(--tx);border:1px solid var(--bd);border-ra
     <div class="hdr-r">
       <div>
         <div class="code-label">세션 코드 (클릭해서 복사)</div>
-        <div class="code-badge" id="code-badge" onclick="copyCode()">------</div>
+        <div class="code-badge" id="code-badge">------</div>
       </div>
       <div class="conn-chip"><span class="cdot" id="cdot"></span><span id="clbl">연결 중</span></div>
     </div>
@@ -169,7 +169,7 @@ select{background:var(--sf);color:var(--tx);border:1px solid var(--bd);border-ra
       <div class="rp-section">
         <div class="rp-hdr">
           <span class="rp-title">실시간 알림</span>
-          <button class="btn" style="padding:2px 8px;font-size:9px" onclick="clearAlerts()">지우기</button>
+          <button class="btn" id="btn-clear-alerts" style="padding:2px 8px;font-size:9px">지우기</button>
         </div>
         <div class="rp-body" id="alert-list">
           <div class="empty-msg" id="alert-empty">알림 없음</div>
@@ -185,13 +185,14 @@ select{background:var(--sf);color:var(--tx);border:1px solid var(--bd);border-ra
   </div>
 
   <div class="bbar">
-    <button class="btn" id="btn-pause" onclick="togglePause()">일시정지</button>
-    <button class="btn btn-acc" id="btn-csv" disabled onclick="exportCSV()">↓ CSV 내보내기</button>
+    <button class="btn" id="btn-pause">일시정지</button>
+    <button class="btn btn-acc" id="btn-csv" disabled>↓ CSV 내보내기</button>
     <div class="thr-row">이탈 기준 <select id="thr-disp"><option value="10">10초</option><option value="20" selected>20초</option><option value="30">30초</option></select></div>
-    <button class="btn" style="margin-left:auto;color:var(--da);border-color:rgba(255,77,77,.3)" onclick="endSession()">세션 종료</button>
+    <button class="btn" id="btn-end" style="margin-left:auto;color:var(--da);border-color:rgba(255,77,77,.3)">세션 종료</button>
   </div>
 </div>
 
+<script src="/socket.io/socket.io.js"></script>
 <script src="/js/instructor.js"></script>
 </body>
 </html>

@@ -21,7 +21,7 @@ function ft(ts) {
 
 function beep(type) {
   try {
-    if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+    if (!AC) AC = new (window.AudioContext || /** @type {any} */(window).webkitAudioContext)();
     const o = AC.createOscillator(), g = AC.createGain();
     o.connect(g); g.connect(AC.destination);
     const t = AC.currentTime;
@@ -61,6 +61,7 @@ function addAlert(name, type, dur, byMotion) {
   l.insertBefore(r, l.firstChild);
   while (l.children.length > 80) l.removeChild(l.lastChild);
 }
+
 function clearAlerts() {
   document.getElementById('alert-list').innerHTML = '<div class="empty-msg" id="alert-empty">알림 없음</div>';
 }
@@ -104,7 +105,7 @@ function removeCard(id) {
   if (!document.getElementById('sgrid').children.length) {
     const d = document.createElement('div');
     d.className = 'no-students'; d.id = 'no-students';
-    d.innerHTML = '학생이 없습니다';
+    d.innerHTML = '학생 입장을 기다리는 중...<br><br><span style="font-size:10px;opacity:.6">세션 코드를 학생들에게 공유하세요</span>';
     document.getElementById('sgrid').appendChild(d);
   }
 }
@@ -116,6 +117,7 @@ function updateGlobal() {
   const ae = document.getElementById('st-abs');
   ae.textContent = absent.length;
   ae.style.color = absent.length > 0 ? 'var(--da)' : 'var(--tx)';
+  const re = document.getElementById('st-rate');
   if (all.length > 0) {
     const now = Date.now();
     let sum = 0;
@@ -125,9 +127,11 @@ function updateGlobal() {
       sum += Math.max(0, Math.min(100, (sm - (s.totalAbsMs||0) - ca) / sm * 100));
     });
     const avg = Math.round(sum / all.length);
-    const re = document.getElementById('st-rate');
     re.textContent = `${avg}%`;
     re.style.color = avg >= 80 ? 'var(--gr)' : avg >= 60 ? 'var(--wa)' : 'var(--da)';
+  } else {
+    re.textContent = '--%';
+    re.style.color = 'var(--gr)';
   }
   all.forEach(s => renderCard(s));
 }
@@ -152,7 +156,8 @@ function togglePause() {
 function exportCSV() {
   socket?.emit('export_csv', { code: sessCode }, ({ csv }) => {
     if (!csv) return;
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    // UTF-8 BOM(﻿) 추가로 Excel 한글 깨짐 방지
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -167,34 +172,53 @@ function endSession() {
   location.reload();
 }
 
-window.copyCode = copyCode;
-window.clearAlerts = clearAlerts;
-window.togglePause = togglePause;
-window.exportCSV = exportCSV;
-window.endSession = endSession;
+function validateServerUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
-document.getElementById('btn-create').addEventListener('click', async () => {
-  const name = document.getElementById('inp-name').value.trim();
-  const serverUrl = document.getElementById('inp-server').value.trim() || 'http://localhost:3000';
+// 정적 버튼 이벤트 — 인라인 onclick 대신 addEventListener 사용
+document.getElementById('code-badge').addEventListener('click', copyCode);
+document.getElementById('btn-clear-alerts').addEventListener('click', clearAlerts);
+document.getElementById('btn-pause').addEventListener('click', togglePause);
+document.getElementById('btn-csv').addEventListener('click', exportCSV);
+document.getElementById('btn-end').addEventListener('click', endSession);
+
+// 임계값 변경 리스너는 클릭 핸들러 바깥에서 한 번만 등록
+document.getElementById('thr-disp').addEventListener('change', () => {
+  const thrSec = parseInt(document.getElementById('thr-disp').value);
+  socket?.emit('set_threshold', { code: sessCode, thrSec });
+});
+
+// Enter 키로 세션 생성
+['inp-name', 'inp-server'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-create').click();
+  });
+});
+
+function startSession(name, serverUrl) {
   const err = document.getElementById('create-err');
-  err.style.display = 'none';
-  if (!name) { err.textContent = '이름을 입력해주세요.'; err.style.display = 'block'; return; }
-
-  document.getElementById('btn-create').textContent = '연결 중...';
-  document.getElementById('btn-create').disabled = true;
+  const btnCreate = document.getElementById('btn-create');
 
   if (socket) { socket.disconnect(); socket = null; }
-  const { io } = await import('https://cdn.socket.io/4.7.2/socket.io.esm.min.js');
+
   socket = io(serverUrl);
 
   socket.on('connect', () => {
     setConn('ok');
+    if (sessCode) return; // 재연결 시 세션 중복 생성 방지
     socket.emit('create_session', { instructorName: name }, ({ code, error }) => {
       if (error || !code) {
         err.textContent = error || '세션 생성에 실패했습니다.';
         err.style.display = 'block';
-        document.getElementById('btn-create').textContent = '세션 만들기';
-        document.getElementById('btn-create').disabled = false;
+        btnCreate.textContent = '세션 만들기';
+        btnCreate.disabled = false;
+        socket.disconnect(); socket = null;
         return;
       }
       sessCode = code; sessStart = Date.now();
@@ -214,17 +238,21 @@ document.getElementById('btn-create').addEventListener('click', async () => {
   });
 
   socket.on('connect_error', () => {
+    if (sessCode) { setConn('err'); return; } // 세션 진행 중 재연결 실패는 UI만 업데이트
     err.textContent = '서버에 연결할 수 없습니다.';
     err.style.display = 'block';
-    document.getElementById('btn-create').textContent = '세션 만들기';
-    document.getElementById('btn-create').disabled = false;
+    btnCreate.textContent = '세션 만들기';
+    btnCreate.disabled = false;
     setConn('err');
     socket.disconnect(); socket = null;
   });
+
   socket.on('disconnect', () => setConn('err'));
 
   socket.on('student_joined', ({ student }) => {
     student.absenceStart = null;
+    student.totalAbsMs = student.totalAbsMs || 0;
+    student.logs = student.logs || 0;
     students.set(student.id, student);
     renderCard(student);
     updateGlobal();
@@ -262,9 +290,17 @@ document.getElementById('btn-create').addEventListener('click', async () => {
     updateGlobal();
     wsLog('in', 'student_left', { name });
   });
+}
 
-  document.getElementById('thr-disp').addEventListener('change', () => {
-    const thrSec = parseInt(document.getElementById('thr-disp').value);
-    socket?.emit('set_threshold', { code: sessCode, thrSec });
-  });
+document.getElementById('btn-create').addEventListener('click', () => {
+  const name = document.getElementById('inp-name').value.trim();
+  const serverUrl = document.getElementById('inp-server').value.trim() || 'http://localhost:3000';
+  const err = document.getElementById('create-err');
+  const btnCreate = document.getElementById('btn-create');
+  err.style.display = 'none';
+  if (!name) { err.textContent = '이름을 입력해주세요.'; err.style.display = 'block'; return; }
+  if (!validateServerUrl(serverUrl)) { err.textContent = '올바른 서버 주소를 입력해주세요. (예: http://localhost:3000)'; err.style.display = 'block'; return; }
+  btnCreate.textContent = '연결 중...';
+  btnCreate.disabled = true;
+  startSession(name, serverUrl);
 });
