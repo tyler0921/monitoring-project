@@ -41,6 +41,7 @@ node server.js
 
 ```bash
 PORT=3000  # 기본 포트 (변경 가능)
+ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000  # 쉼표 구분 Origin allowlist
 ```
 
 ### 5. 외부 접속 설정

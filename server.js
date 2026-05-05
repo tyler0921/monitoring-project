@@ -5,7 +5,21 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const allowedOrigins = String(process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(v => v.trim())
+  .filter(Boolean);
+
+const io = new Server(server, {
+  cors: {
+    origin: (origin, cb) => {
+      if (!origin || !allowedOrigins.length || allowedOrigins.includes(origin)) {
+        return cb(null, true);
+      }
+      return cb(new Error('Not allowed by CORS'));
+    },
+  },
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -27,6 +41,13 @@ function csvCell(value) {
   const formulaSafe = /^[=+\-@]/.test(text) ? `'${text}` : text;
   const escaped = formulaSafe.replace(/"/g, '""');
   return `"${escaped}"`;
+}
+
+function findStudentByName(sess, name) {
+  for (const st of sess.students.values()) {
+    if (st.name === name) return st;
+  }
+  return null;
 }
 
 function genCode() {
@@ -73,15 +94,27 @@ io.on('connection', (socket) => {
     const sess = sessions.get(safeCode);
     if (!sess) return cb({ error: '세션 코드가 올바르지 않습니다.' });
 
-    const student = {
-      id: socket.id,
-      name: safeName,
-      status: 'idle',
-      absenceStart: null,
-      logs: [],
-      totalAbsMs: 0,
-      joinTime: Date.now(),
-    };
+    const prevStudent = findStudentByName(sess, safeName);
+    if (prevStudent) {
+      sess.students.delete(prevStudent.id);
+    }
+
+    const student = prevStudent
+      ? {
+          ...prevStudent,
+          id: socket.id,
+          status: 'idle',
+          absenceStart: null,
+        }
+      : {
+          id: socket.id,
+          name: safeName,
+          status: 'idle',
+          absenceStart: null,
+          logs: [],
+          totalAbsMs: 0,
+          joinTime: Date.now(),
+        };
     sess.students.set(socket.id, student);
     socket.join(`s_${safeCode}`);
     socket.data = { code: safeCode, role: 'student', name: safeName };
@@ -204,9 +237,22 @@ io.on('connection', (socket) => {
     const sess = sessions.get(code);
     if (!sess) return;
     if (role === 'student') {
-      sess.students.delete(socket.id);
-      io.to(`s_${code}`).emit('student_left', { id: socket.id, name });
-      console.log(`[이탈] ${name} — 세션 ${code}`);
+      const st = sess.students.get(socket.id);
+      if (!st) return;
+      if (st.status === 'absent' && st.absenceStart) {
+        const dur = Date.now() - st.absenceStart;
+        st.logs.push({ start: st.absenceStart, end: Date.now(), dur });
+        st.totalAbsMs += dur;
+        st.absenceStart = null;
+      }
+      st.status = 'offline';
+      io.to(`s_${code}`).emit('student_update', {
+        id: socket.id,
+        name,
+        status: 'offline',
+        ts: Date.now(),
+      });
+      console.log(`[오프라인] ${name} — 세션 ${code}`);
     } else if (role === 'instructor') {
       io.to(`s_${code}`).emit('session_ended');
       sessions.delete(code);
@@ -217,7 +263,7 @@ io.on('connection', (socket) => {
 
 function sanitize(st) {
   return { id: st.id, name: st.name, status: st.status,
-    totalAbsMs: st.totalAbsMs, logs: st.logs.length, joinTime: st.joinTime };
+    totalAbsMs: st.totalAbsMs, logs: st.logs.length, joinTime: st.joinTime, absenceStart: st.absenceStart };
 }
 
 const PORT = process.env.PORT || 3000;
@@ -225,4 +271,9 @@ server.listen(PORT, () => {
   console.log(`\nFaceTrack 서버 실행 중 → http://localhost:${PORT}`);
   console.log(`  수강생: http://localhost:${PORT}/student.html`);
   console.log(`  강사:   http://localhost:${PORT}/instructor.html\n`);
+  if (allowedOrigins.length) {
+    console.log(`  CORS 허용 Origin: ${allowedOrigins.join(', ')}`);
+  } else {
+    console.log('  CORS 허용 Origin: 전체(개발 모드)');
+  }
 });

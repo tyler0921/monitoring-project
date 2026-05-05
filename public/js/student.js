@@ -14,6 +14,7 @@ let detInt = null;
 let tickInt = null;
 let tsInt = null;
 let paused = false;
+let lastSentStatus = null;
 
 const vid = document.getElementById('vid');
 const cvs = document.getElementById('cvs');
@@ -62,6 +63,13 @@ function addLog(entry) {
   const motTag = entry.byMotion ? '<span class="lm">[모션]</span>' : '';
   r.innerHTML = `<span class="lt">${ft(entry.s)} → ${ft(entry.e)}</span>${motTag}<span class="ld">${fms(entry.d)}</span>`;
   document.getElementById('log-body').insertBefore(r, document.getElementById('log-body').firstChild);
+}
+
+function emitStatus(status, byMotion, force = false) {
+  if (!force && lastSentStatus === status) return;
+  if (status === 'present' && byMotion) socket?.emit('status', { status, byMotion: true });
+  else socket?.emit('status', { status });
+  lastSentStatus = status;
 }
 
 const MOTION = {
@@ -183,9 +191,9 @@ async function detect() {
       const entry = { s: absStart, e: Date.now(), d: dur };
       absLogs.push(entry); totalAbsMs += dur; absStart = null;
       addLog(entry);
-      socket?.emit('status', { status: 'present' });
+      emitStatus('present');
     } else {
-      socket?.emit('status', { status: 'present' });
+      emitStatus('present');
     }
     setStatus('present');
   } else if (personPresent) {
@@ -198,10 +206,10 @@ async function detect() {
       const entry = { s: absStart, e: Date.now(), d: dur, byMotion };
       absLogs.push(entry); totalAbsMs += dur; absStart = null;
       addLog(entry);
-      socket?.emit('status', { status: 'present', byMotion });
+      emitStatus('present', byMotion);
       setStatus('present');
     } else {
-      socket?.emit('status', { status: 'warning' });
+      emitStatus('warning');
       setStatus('warning');
     }
   } else {
@@ -212,10 +220,10 @@ async function detect() {
       if (noFaceFrames >= frames) {
         isAbsent = true;
         absStart = noFaceStart;
-        socket?.emit('status', { status: 'absent' });
+        emitStatus('absent');
         setStatus('absent');
       } else {
-        socket?.emit('status', { status: 'warning' });
+        emitStatus('warning');
         setStatus('warning');
       }
     }
@@ -262,6 +270,7 @@ async function startTracking() {
     return;
   }
   running = true; prevFrame = null; noFaceFrames = 0; noFaceStart = null; isAbsent = false; absStart = null;
+  lastSentStatus = null;
   absLogs = []; totalAbsMs = 0;
   document.getElementById('log-body').innerHTML = '<div style="padding:12px;font-family:var(--fm);font-size:10px;color:var(--mu);text-align:center" id="log-empty">기록 없음</div>';
   document.getElementById('btn-start').disabled = true;
@@ -277,7 +286,7 @@ async function startTracking() {
 
 function stopTracking() {
   running = false;
-  socket?.emit('status', { status: 'idle' });
+  emitStatus('idle', false, true);
   clearInterval(detInt); clearInterval(tickInt); clearInterval(tsInt);
   if (vid.srcObject) { vid.srcObject.getTracks().forEach(t => t.stop()); vid.srcObject = null; }
   ctx.clearRect(0, 0, cvs.width, cvs.height); prevFrame = null;

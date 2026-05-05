@@ -277,6 +277,9 @@ function startSession(name, serverUrl) {
       beep('ret');
     } else if (status === 'present' || status === 'warning') {
       st.absenceStart = null;
+    } else if (status === 'offline') {
+      st.absenceStart = null;
+      if (prev !== 'offline') addAlert(name, 'leave', 0);
     }
     renderCard(st);
     updateGlobal();
