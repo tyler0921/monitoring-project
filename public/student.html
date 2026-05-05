@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FaceTrack — 수강생</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0e13;--sf:#12151c;--card:#171b24;--bd:#1c2133;
+  --gr:#00e5a0;--wa:#f5a623;--da:#ff4d4d;--tx:#dde4f0;--mu:#3a4560;
+  --fm:'JetBrains Mono',monospace;--fb:'Noto Sans KR',sans-serif;
+}
+body{background:var(--bg);color:var(--tx);font-family:var(--fb);min-height:100vh;display:flex;flex-direction:column}
+
+/* JOIN SCREEN */
+#join-screen{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
+.join-card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:36px 32px;width:100%;max-width:420px}
+.join-logo{font-family:var(--fm);font-size:22px;font-weight:700;color:var(--gr);letter-spacing:.12em;margin-bottom:6px}
+.join-logo em{color:var(--mu);font-style:normal}
+.join-sub{font-size:13px;color:var(--mu);margin-bottom:28px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;color:var(--mu);margin-bottom:6px;font-family:var(--fm)}
+.field input{width:100%;background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;color:var(--tx);font-family:var(--fb);font-size:14px;outline:none;transition:border-color .2s}
+.field input:focus{border-color:var(--gr)}
+.field input::placeholder{color:var(--mu)}
+.err{color:var(--da);font-size:12px;margin-top:8px;font-family:var(--fm);display:none}
+.btn-join{width:100%;background:var(--gr);color:#0c0e13;border:none;border-radius:8px;padding:12px;font-family:var(--fm);font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.06em;transition:opacity .2s;margin-top:8px}
+.btn-join:hover{opacity:.88}
+.divider{border:none;border-top:1px solid var(--bd);margin:20px 0}
+.server-url-row{display:flex;gap:8px;align-items:center}
+.server-url-row input{flex:1;font-size:12px}
+.server-url-row span{font-size:11px;color:var(--mu);white-space:nowrap;font-family:var(--fm)}
+
+/* TRACKER SCREEN */
+#tracker-screen{display:none;flex-direction:column;height:100vh}
+.top-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--sf);border-bottom:1px solid var(--bd);flex-shrink:0}
+.top-logo{font-family:var(--fm);font-size:12px;font-weight:700;color:var(--gr);letter-spacing:.1em}
+.top-logo em{color:var(--mu);font-style:normal}
+.user-chip{font-family:var(--fm);font-size:11px;color:var(--mu);background:var(--card);border:1px solid var(--bd);border-radius:20px;padding:3px 10px}
+.conn-dot{width:6px;height:6px;border-radius:50%;background:var(--mu);display:inline-block;margin-right:4px}
+.conn-dot.ok{background:var(--gr)}
+.conn-dot.err{background:var(--da)}
+
+.main-area{display:grid;grid-template-columns:1fr 200px;gap:12px;padding:12px;flex:1;min-height:0;overflow:hidden}
+.cam-wrap{position:relative;background:#080a0f;border-radius:10px;overflow:hidden;border:1px solid var(--bd);height:100%}
+.cam-wrap video,.cam-wrap canvas{width:100%;height:100%;object-fit:cover;display:block}
+.cam-wrap canvas{position:absolute;top:0;left:0;transform:scaleX(-1)}
+.cam-wrap video{transform:scaleX(-1)}
+.cam-timestamp{position:absolute;top:7px;left:9px;font-family:var(--fm);font-size:9px;color:rgba(255,255,255,.4);pointer-events:none}
+.status-pill{position:absolute;bottom:8px;left:8px;padding:4px 12px;border-radius:20px;font-family:var(--fm);font-size:10px;font-weight:700;letter-spacing:.06em;transition:all .3s}
+.sp-p{background:rgba(0,229,160,.15);color:var(--gr);border:1px solid rgba(0,229,160,.3)}
+.sp-w{background:rgba(245,166,35,.15);color:var(--wa);border:1px solid rgba(245,166,35,.3)}
+.sp-a{background:rgba(255,77,77,.15);color:var(--da);border:1px solid rgba(255,77,77,.3)}
+.sp-i{background:rgba(58,69,96,.2);color:var(--mu);border:1px solid var(--bd)}
+.cam-conf{position:absolute;top:7px;right:9px;font-family:var(--fm);font-size:9px;color:rgba(255,255,255,.4);pointer-events:none}
+
+.side-panel{display:flex;flex-direction:column;gap:10px;overflow-y:auto}
+.scard{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:10px 12px}
+.scard-label{font-family:var(--fm);font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+.scard-val{font-family:var(--fm);font-size:18px;font-weight:700;line-height:1;margin-bottom:3px}
+.scard-sub{font-size:11px;color:var(--mu)}
+.meter{background:var(--bd);border-radius:3px;height:5px;overflow:hidden;margin-top:6px}
+.meter-fill{height:100%;border-radius:3px;transition:width .3s,background .3s}
+
+.sig-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sig-box{background:var(--card);border:1px solid var(--bd);border-radius:7px;padding:8px 10px}
+.sig-lbl{font-family:var(--fm);font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px}
+.sig-val{font-family:var(--fm);font-size:16px;font-weight:700}
+.sig-bar{background:var(--bd);border-radius:2px;height:3px;overflow:hidden;margin-top:5px}
+.sig-bar-fill{height:100%;border-radius:2px;transition:width .25s,background .3s}
+
+.log-area{padding:0 12px 12px;flex-shrink:0}
+.log-panel{background:var(--card);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+.log-hdr{display:flex;align-items:center;justify-content:space-between;padding:6px 11px;background:var(--sf);border-bottom:1px solid var(--bd)}
+.log-title{font-family:var(--fm);font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.06em}
+.log-body{max-height:100px;overflow-y:auto}
+.log-body::-webkit-scrollbar{width:3px}
+.log-body::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px}
+.log-row{display:flex;justify-content:space-between;padding:5px 11px;border-bottom:1px solid var(--bd);font-family:var(--fm);font-size:10px}
+.log-row:last-child{border-bottom:none}
+.log-row .lt{color:var(--mu)}
+.log-row .ld{color:var(--da);font-weight:700}
+.log-row .lm{color:var(--gr);font-size:9px}
+
+.bottom-bar{padding:8px 12px;background:var(--sf);border-top:1px solid var(--bd);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.btn-sm{font-family:var(--fm);font-size:10px;padding:5px 12px;border-radius:5px;border:1px solid var(--bd);cursor:pointer;background:transparent;color:var(--tx);transition:all .2s}
+.btn-sm:hover{background:rgba(255,255,255,.05)}
+.btn-sm:disabled{opacity:.3;cursor:not-allowed}
+.btn-acc{background:var(--gr);color:#0c0e13;border-color:var(--gr)}
+.btn-acc:hover{opacity:.88}
+.thr-row{margin-left:auto;display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:10px;color:var(--mu)}
+select{background:var(--sf);color:var(--tx);border:1px solid var(--bd);border-radius:4px;padding:3px 7px;font-family:var(--fm);font-size:10px}
+
+.pause-banner{display:none;background:rgba(245,166,35,.1);border-bottom:1px solid rgba(245,166,35,.3);padding:7px 14px;text-align:center;font-family:var(--fm);font-size:11px;color:var(--wa);letter-spacing:.04em;flex-shrink:0}
+
+/* LOAD OVERLAY */
+.load-ov{position:absolute;inset:0;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:20;border-radius:10px}
+.load-bar-w{width:75%;background:var(--bd);border-radius:3px;height:3px;overflow:hidden}
+.load-bar{height:100%;background:var(--gr);animation:lp 2.5s ease-out forwards}
+@keyframes lp{0%{width:0}60%{width:70%}100%{width:100%}}
+.load-txt{font-family:var(--fm);font-size:10px;color:var(--mu)}
+</style>
+</head>
+<body>
+
+<!-- JOIN -->
+<div id="join-screen">
+  <div class="join-card">
+    <div class="join-logo">FACE<em>TRACK</em></div>
+    <div class="join-sub">ZEP 수업 중 자리이탈 감지 모니터링</div>
+    <div class="field">
+      <label>이름</label>
+      <input id="inp-name" type="text" placeholder="홍길동" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>세션 코드 (강사에게 받은 코드)</label>
+      <input id="inp-code" type="text" placeholder="ABC12" maxlength="5" style="text-transform:uppercase;letter-spacing:.15em;font-family:var(--fm);font-size:18px" autocomplete="off">
+    </div>
+    <div class="err" id="join-err"></div>
+    <button class="btn-join" id="btn-join">입장하기</button>
+    <hr class="divider">
+    <div class="field">
+      <label>서버 주소</label>
+      <div class="server-url-row">
+        <input id="inp-server" type="text" value="http://localhost:3000" placeholder="http://서버주소:3000">
+        <span>기본값</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TRACKER -->
+<div id="tracker-screen">
+  <div class="pause-banner" id="pause-banner">일시정지 중 — 강사가 감지를 일시 중단했습니다</div>
+  <div class="top-bar">
+    <div class="top-logo">FACE<em>TRACK</em></div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="user-chip" id="user-chip">-</span>
+      <span style="font-family:var(--fm);font-size:10px;color:var(--mu)"><span class="conn-dot" id="conn-dot"></span><span id="conn-lbl">연결 중</span></span>
+    </div>
+  </div>
+
+  <div class="main-area">
+    <div class="cam-wrap" id="cam-wrap">
+      <video id="vid" autoplay muted playsinline></video>
+      <canvas id="cvs"></canvas>
+      <div class="cam-timestamp" id="ts-lbl">--:--:--</div>
+      <div class="cam-conf" id="conf-lbl"></div>
+      <div class="status-pill sp-i" id="spill">IDLE</div>
+      <div class="load-ov" id="load-ov">
+        <div class="load-bar-w"><div class="load-bar"></div></div>
+        <div class="load-txt" id="load-txt">모델 로딩 중...</div>
+      </div>
+    </div>
+
+    <div class="side-panel">
+      <div class="sig-row">
+        <div class="sig-box">
+          <div class="sig-lbl">얼굴</div>
+          <div class="sig-val" id="face-v" style="color:var(--mu)">--</div>
+          <div class="sig-bar"><div class="sig-bar-fill" id="face-b" style="width:0%;background:var(--mu)"></div></div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-lbl">모션</div>
+          <div class="sig-val" id="mot-v" style="color:var(--mu)">--</div>
+          <div class="sig-bar"><div class="sig-bar-fill" id="mot-b" style="width:0%;background:var(--mu)"></div></div>
+        </div>
+      </div>
+      <div class="scard">
+        <div class="scard-label">참여율</div>
+        <div class="scard-val" id="rate-v" style="color:var(--gr)">--%</div>
+        <div class="scard-sub">세션 기준</div>
+        <div class="meter"><div class="meter-fill" id="rate-b" style="width:0%;background:var(--gr)"></div></div>
+      </div>
+      <div class="scard">
+        <div class="scard-label">이탈 현황</div>
+        <div class="scard-val" id="cnt-v">0회</div>
+        <div class="scard-sub" id="tot-abs">총 이탈 --</div>
+      </div>
+      <div class="scard">
+        <div class="scard-label">현재 이탈</div>
+        <div class="scard-val" id="cur-v" style="color:var(--mu);font-size:14px">대기 중</div>
+        <div class="scard-sub" id="sess-t">세션: 00:00</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="log-area">
+    <div class="log-panel">
+      <div class="log-hdr">
+        <span class="log-title">이탈 기록</span>
+      </div>
+      <div class="log-body" id="log-body">
+        <div style="padding:12px;font-family:var(--fm);font-size:10px;color:var(--mu);text-align:center" id="log-empty">기록 없음</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <button class="btn-sm btn-acc" id="btn-start" disabled>카메라 시작</button>
+    <button class="btn-sm" id="btn-stop" disabled>중지</button>
+    <div class="thr-row">
+      이탈 기준 <span id="thr-val" style="font-family:var(--fm);font-size:10px;color:var(--tx);background:var(--sf);border:1px solid var(--bd);border-radius:4px;padding:3px 8px">20초</span>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+<script>
+const MDL = '/weights';
+let socket = null;
+let running = false;
+let sessStart = null;
+let absStart = null;
+let absLogs = [];
+let totalAbsMs = 0;
+let noFaceFrames = 0;
+let noFaceStart = null;
+let isAbsent = false;
+let thrSec = 20;
+let poseDetector = null;
+let detInt = null;
+let tickInt = null;
+let tsInt = null;
+let paused = false;
+
+const vid = document.getElementById('vid');
+const cvs = document.getElementById('cvs');
+const ctx = cvs.getContext('2d');
+const mcvs = document.createElement('canvas');
+mcvs.width = 160; mcvs.height = 120;
+const mctx = mcvs.getContext('2d');
+let prevFrame = null;
+
+function fms(ms) {
+  if (!ms || ms < 0) ms = 0;
+  const s = Math.floor(ms / 1000), m = Math.floor(s / 60);
+  return m > 0 ? `${m}분 ${String(s % 60).padStart(2, '0')}초` : `${s}초`;
+}
+function ft(ts) {
+  const d = new Date(ts);
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map(v => String(v).padStart(2, '0')).join(':');
+}
+
+function setStatus(st) {
+  const spill = document.getElementById('spill');
+  const m = {
+    present: ['sp-p', 'PRESENT'],
+    warning: ['sp-w', 'WARNING'],
+    absent: ['sp-a', 'ABSENT'],
+    idle: ['sp-i', 'IDLE'],
+  };
+  const [cl, tx] = m[st] || m.idle;
+  spill.className = `status-pill ${cl}`;
+  spill.textContent = tx;
+}
+
+function setConn(st) {
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-lbl');
+  const m = { ok: ['ok', '연결됨'], err: ['err', '연결 끊김'], connecting: ['', '연결 중'] };
+  const [cls, tx] = m[st] || m.connecting;
+  dot.className = `conn-dot ${cls}`;
+  lbl.textContent = tx;
+}
+
+function addLog(entry) {
+  document.getElementById('log-empty')?.remove();
+  const r = document.createElement('div');
+  r.className = 'log-row';
+  const motTag = entry.byMotion ? '<span class="lm">[모션]</span>' : '';
+  r.innerHTML = `<span class="lt">${ft(entry.s)} → ${ft(entry.e)}</span>${motTag}<span class="ld">${fms(entry.d)}</span>`;
+  document.getElementById('log-body').insertBefore(r, document.getElementById('log-body').firstChild);
+}
+
+const MOTION = {
+  NO_MOTION:      { key: 'NO_MOTION',      label: '없음',      color: 'var(--mu)', bar: 0   },
+  LOW_MOTION:     { key: 'LOW_MOTION',     label: '미세',      color: 'var(--mu)', bar: 20  },
+  NORMAL_MOTION:  { key: 'NORMAL_MOTION',  label: '정상',      color: 'var(--gr)', bar: 60  },
+  HIGH_MOTION:    { key: 'HIGH_MOTION',    label: '큰 움직임', color: 'var(--wa)', bar: 100 },
+  SCREEN_BLOCKED: { key: 'SCREEN_BLOCKED', label: '화면 가림', color: 'var(--da)', bar: 30  },
+};
+
+function calcMotionLevel() {
+  if (!vid.videoWidth) return MOTION.NO_MOTION;
+  mctx.drawImage(vid, 0, 0, 160, 120);
+  const curr = mctx.getImageData(0, 0, 160, 120);
+  const pixelCount = curr.data.length / 4;
+
+  let totalB = 0, minB = 255, maxB = 0;
+  for (let i = 0; i < curr.data.length; i += 4) {
+    const b = (curr.data[i] + curr.data[i+1] + curr.data[i+2]) / 3;
+    totalB += b;
+    if (b < minB) minB = b;
+    if (b > maxB) maxB = b;
+  }
+  const avgB = totalB / pixelCount;
+  const rangeB = maxB - minB;
+
+  if (avgB < 15 || (rangeB < 25 && avgB < 60)) {
+    prevFrame = curr;
+    return MOTION.SCREEN_BLOCKED;
+  }
+
+  if (!prevFrame) { prevFrame = curr; return MOTION.NO_MOTION; }
+
+  let diff = 0;
+  for (let i = 0; i < curr.data.length; i += 4) {
+    diff += (Math.abs(curr.data[i]   - prevFrame.data[i])   +
+             Math.abs(curr.data[i+1] - prevFrame.data[i+1]) +
+             Math.abs(curr.data[i+2] - prevFrame.data[i+2])) / 3;
+  }
+  prevFrame = curr;
+
+  const val = Math.min(100, (diff / pixelCount) * 3.5);
+  if (val < 3)  return MOTION.NO_MOTION;
+  if (val < 12) return MOTION.LOW_MOTION;
+  if (val < 35) return MOTION.NORMAL_MOTION;
+  return MOTION.HIGH_MOTION;
+}
+
+async function initPoseDetector() {
+  await tf.ready();
+  poseDetector = await poseDetection.createDetector(
+    poseDetection.SupportedModels.MoveNet,
+    { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+  );
+}
+
+async function detectPose() {
+  if (!poseDetector || !vid.videoWidth) return { detected: false, conf: 0 };
+  try {
+    const poses = await poseDetector.estimatePoses(vid, { flipHorizontal: true });
+    if (!poses.length) return { detected: false, conf: 0 };
+    const kps = poses[0].keypoints;
+    const valid = kps.filter(kp => kp.score > 0.3);
+    const avgConf = Math.round(kps.reduce((s, kp) => s + kp.score, 0) / kps.length * 100);
+    return { detected: valid.length >= 4, conf: avgConf };
+  } catch {
+    return { detected: false, conf: 0 };
+  }
+}
+
+function drawBox(det) {
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+  if (!det) return;
+  const b = det.box;
+  const sx = cvs.width / (vid.videoWidth || cvs.width);
+  const sy = cvs.height / (vid.videoHeight || cvs.height);
+  const x = b.x * sx, y = b.y * sy, bw = b.width * sx, bh = b.height * sy;
+  const col = isAbsent ? '#ff4d4d' : noFaceFrames > 0 ? '#f5a623' : '#00e5a0';
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(x, y, bw, bh);
+  const cl = Math.min(bw, bh) * .18; ctx.lineWidth = 2.5;
+  [[x,y+cl,x,y,x+cl,y],[x+bw-cl,y,x+bw,y,x+bw,y+cl],
+   [x,y+bh-cl,x,y+bh,x+cl,y+bh],[x+bw-cl,y+bh,x+bw,y+bh,x+bw,y+bh-cl]]
+    .forEach(([x1,y1,x2,y2,x3,y3]) => { ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.lineTo(x3,y3); ctx.stroke(); });
+}
+
+async function detect() {
+  if (!running || paused) return;
+  const motion = calcMotionLevel();
+  const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+  const [det, pose] = await Promise.all([
+    faceapi.detectSingleFace(vid, opts),
+    detectPose(),
+  ]);
+  const faceConf = det ? Math.round(det.score * 100) : 0;
+  const frames = Math.ceil(thrSec * 1000 / 500);
+
+  drawBox(det);
+
+  document.getElementById('face-v').textContent = det ? `${faceConf}%` : '없음';
+  document.getElementById('face-v').style.color = det ? 'var(--gr)' : 'var(--da)';
+  document.getElementById('face-b').style.width = `${faceConf}%`;
+  document.getElementById('face-b').style.background = faceConf > 70 ? 'var(--gr)' : faceConf > 40 ? 'var(--wa)' : 'var(--da)';
+  document.getElementById('mot-v').textContent = motion.label;
+  document.getElementById('mot-v').style.color = motion.color;
+  document.getElementById('mot-b').style.width = `${motion.bar}%`;
+  document.getElementById('mot-b').style.background = motion.color;
+  document.getElementById('conf-lbl').textContent = det ? `${faceConf}%` : '';
+
+  const personPresent = pose.detected
+    || motion.key === 'NORMAL_MOTION'
+    || motion.key === 'HIGH_MOTION';
+
+  if (det) {
+    noFaceFrames = 0;
+    noFaceStart = null;
+    if (isAbsent) {
+      isAbsent = false;
+      const dur = Date.now() - absStart;
+      const entry = { s: absStart, e: Date.now(), d: dur };
+      absLogs.push(entry); totalAbsMs += dur; absStart = null;
+      addLog(entry);
+      socket?.emit('status', { status: 'present' });
+    } else {
+      socket?.emit('status', { status: 'present' });
+    }
+    setStatus('present');
+  } else if (personPresent) {
+    noFaceFrames = Math.max(0, noFaceFrames - 1);
+    if (noFaceFrames === 0) noFaceStart = null;
+    if (isAbsent) {
+      isAbsent = false;
+      const dur = Date.now() - absStart;
+      const byMotion = !pose.detected;
+      const entry = { s: absStart, e: Date.now(), d: dur, byMotion };
+      absLogs.push(entry); totalAbsMs += dur; absStart = null;
+      addLog(entry);
+      socket?.emit('status', { status: 'present', byMotion });
+      setStatus('present');
+    } else {
+      socket?.emit('status', { status: 'warning' });
+      setStatus('warning');
+    }
+  } else {
+    // NO_MOTION / LOW_MOTION / SCREEN_BLOCKED — 얼굴·자세 모두 없음
+    if (noFaceFrames === 0) noFaceStart = Date.now();
+    noFaceFrames++;
+    if (!isAbsent) {
+      if (noFaceFrames >= frames) {
+        isAbsent = true;
+        absStart = noFaceStart;
+        socket?.emit('status', { status: 'absent' });
+        setStatus('absent');
+      } else {
+        socket?.emit('status', { status: 'warning' });
+        setStatus('warning');
+      }
+    }
+  }
+}
+
+function updateStats() {
+  if (!sessStart) return;
+  const now = Date.now();
+  const sessMs = now - sessStart;
+  const curAbsMs = isAbsent && absStart ? now - absStart : 0;
+  const totalAbs = totalAbsMs + curAbsMs;
+  const rate = sessMs > 1000 ? Math.max(0, Math.min(100, (sessMs - totalAbs) / sessMs * 100)) : 100;
+
+  document.getElementById('rate-v').textContent = `${Math.round(rate)}%`;
+  document.getElementById('rate-v').style.color = rate >= 80 ? 'var(--gr)' : rate >= 60 ? 'var(--wa)' : 'var(--da)';
+  document.getElementById('rate-b').style.width = `${rate}%`;
+  document.getElementById('rate-b').style.background = rate >= 80 ? 'var(--gr)' : rate >= 60 ? 'var(--wa)' : 'var(--da)';
+
+  document.getElementById('cnt-v').textContent = `${absLogs.length + (isAbsent ? 1 : 0)}회`;
+  document.getElementById('tot-abs').textContent = `총 이탈 ${totalAbsMs > 0 ? fms(totalAbsMs) : '--'}`;
+
+  if (isAbsent && absStart) {
+    document.getElementById('cur-v').textContent = fms(curAbsMs);
+    document.getElementById('cur-v').style.color = 'var(--da)';
+  } else {
+    document.getElementById('cur-v').textContent = running ? '참여 중' : '대기 중';
+    document.getElementById('cur-v').style.color = running ? 'var(--gr)' : 'var(--mu)';
+  }
+
+  const m = Math.floor(sessMs / 60000), s = Math.floor((sessMs % 60000) / 1000);
+  document.getElementById('sess-t').textContent = `세션: ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+async function startTracking() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+    vid.srcObject = stream;
+    await new Promise(r => vid.onloadedmetadata = r);
+    cvs.width = vid.videoWidth || 640; cvs.height = vid.videoHeight || 480;
+  } catch (e) {
+    document.getElementById('load-txt').textContent = '카메라 접근 권한이 필요합니다.';
+    document.getElementById('load-ov').style.display = 'flex';
+    return;
+  }
+  running = true; prevFrame = null; noFaceFrames = 0; noFaceStart = null; isAbsent = false; absStart = null;
+  absLogs = []; totalAbsMs = 0;
+  document.getElementById('log-body').innerHTML = '<div style="padding:12px;font-family:var(--fm);font-size:10px;color:var(--mu);text-align:center" id="log-empty">기록 없음</div>';
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-stop').disabled = false;
+  setStatus('present');
+  detInt = setInterval(detect, 500);
+  tickInt = setInterval(updateStats, 1000);
+  tsInt = setInterval(() => {
+    const d = new Date();
+    document.getElementById('ts-lbl').textContent = [d.getHours(),d.getMinutes(),d.getSeconds()].map(v=>String(v).padStart(2,'0')).join(':');
+  }, 500);
+}
+
+function stopTracking() {
+  running = false;
+  socket?.emit('status', { status: 'idle' });
+  clearInterval(detInt); clearInterval(tickInt); clearInterval(tsInt);
+  if (vid.srcObject) { vid.srcObject.getTracks().forEach(t => t.stop()); vid.srcObject = null; }
+  ctx.clearRect(0, 0, cvs.width, cvs.height); prevFrame = null;
+  setStatus('idle');
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled = true;
+  document.getElementById('face-v').textContent = '--';
+  document.getElementById('mot-v').textContent = '--';
+}
+
+document.getElementById('btn-start').addEventListener('click', startTracking);
+document.getElementById('btn-stop').addEventListener('click', stopTracking);
+
+document.getElementById('inp-code').addEventListener('input', e => {
+  e.target.value = e.target.value.toUpperCase();
+});
+
+document.getElementById('btn-join').addEventListener('click', async () => {
+  const name = document.getElementById('inp-name').value.trim();
+  const code = document.getElementById('inp-code').value.trim().toUpperCase();
+  const serverUrl = document.getElementById('inp-server').value.trim() || 'http://localhost:3000';
+  const err = document.getElementById('join-err');
+  err.style.display = 'none';
+  if (!name) { err.textContent = '이름을 입력해주세요.'; err.style.display = 'block'; return; }
+  if (!code || code.length < 4) { err.textContent = '세션 코드를 입력해주세요.'; err.style.display = 'block'; return; }
+
+  document.getElementById('btn-join').textContent = '연결 중...';
+  document.getElementById('btn-join').disabled = true;
+
+  if (socket) { socket.disconnect(); socket = null; }
+  const { io } = await import('https://cdn.socket.io/4.7.2/socket.io.esm.min.js');
+  socket = io(serverUrl);
+
+  socket.on('connect', () => {
+    setConn('ok');
+    socket.emit('join_session', { name, code }, (res) => {
+      if (res.error) {
+        err.textContent = res.error; err.style.display = 'block';
+        document.getElementById('btn-join').textContent = '입장하기';
+        document.getElementById('btn-join').disabled = false;
+        socket.disconnect(); socket = null;
+        return;
+      }
+      sessStart = res.sessionStart || Date.now();
+      paused = res.paused || false;
+      thrSec = res.thrSec || 20;
+      document.getElementById('thr-val').textContent = `${thrSec}초`;
+      document.getElementById('join-screen').style.display = 'none';
+      document.getElementById('tracker-screen').style.display = 'flex';
+      document.getElementById('user-chip').textContent = name;
+      if (paused) document.getElementById('pause-banner').style.display = 'block';
+    });
+  });
+
+  socket.on('connect_error', () => {
+    err.textContent = '서버에 연결할 수 없습니다. 서버 주소를 확인해주세요.';
+    err.style.display = 'block';
+    document.getElementById('btn-join').textContent = '입장하기';
+    document.getElementById('btn-join').disabled = false;
+    setConn('err');
+    socket.disconnect(); socket = null;
+  });
+
+  socket.on('disconnect', () => setConn('err'));
+  socket.on('session_ended', () => {
+    stopTracking();
+    alert('강사가 세션을 종료했습니다.');
+    location.reload();
+  });
+  socket.on('pause_state', ({ paused: p }) => {
+    paused = p;
+    document.getElementById('pause-banner').style.display = p ? 'block' : 'none';
+  });
+  socket.on('threshold_changed', ({ thrSec: t }) => {
+    thrSec = t;
+    document.getElementById('thr-val').textContent = `${t}초`;
+  });
+});
+
+(async () => {
+  try {
+    document.getElementById('load-txt').textContent = '얼굴 모델 로딩 중...';
+    try {
+      await faceapi.nets.tinyFaceDetector.loadFromUri('/weights');
+    } catch {
+      await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights');
+    }
+    document.getElementById('load-txt').textContent = '자세 모델 로딩 중...';
+    try {
+      await initPoseDetector();
+    } catch (e) {
+      console.warn('자세 모델 로딩 실패, 얼굴 감지만 사용합니다.', e);
+    }
+    document.getElementById('load-ov').style.display = 'none';
+    document.getElementById('btn-start').disabled = false;
+    setStatus('idle');
+  } catch (e) {
+    document.getElementById('load-txt').textContent = '모델 로딩 실패 — 새로고침 해주세요.';
+  }
+})();
+</script>
+</body>
+</html>

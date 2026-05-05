@@ -1,0 +1,200 @@
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+const sessions = new Map();
+
+function genCode() {
+  let code;
+  do {
+    code = Math.random().toString(36).slice(2, 7).toUpperCase();
+  } while (sessions.has(code));
+  return code;
+}
+
+function fmtTime(ts) {
+  const d = new Date(ts);
+  return [d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map(v => String(v).padStart(2, '0')).join(':');
+}
+
+io.on('connection', (socket) => {
+
+  socket.on('create_session', ({ instructorName }, cb) => {
+    const code = genCode();
+    sessions.set(code, {
+      code,
+      instructorName,
+      instructorSocket: socket.id,
+      students: new Map(),
+      startTime: Date.now(),
+      paused: false,
+      thrSec: 20,
+    });
+    socket.join(`s_${code}`);
+    socket.data = { code, role: 'instructor' };
+    cb({ code });
+    console.log(`[세션 생성] ${code} — ${instructorName}`);
+  });
+
+  socket.on('join_session', ({ name, code }, cb) => {
+    const sess = sessions.get(code);
+    if (!sess) return cb({ error: '세션 코드가 올바르지 않습니다.' });
+
+    const student = {
+      id: socket.id,
+      name,
+      status: 'idle',
+      absenceStart: null,
+      logs: [],
+      totalAbsMs: 0,
+      joinTime: Date.now(),
+    };
+    sess.students.set(socket.id, student);
+    socket.join(`s_${code}`);
+    socket.data = { code, role: 'student', name };
+
+    io.to(`s_${code}`).emit('student_joined', { student: sanitize(student) });
+    cb({ ok: true, sessionStart: sess.startTime, paused: sess.paused, thrSec: sess.thrSec });
+    console.log(`[참여] ${name} → 세션 ${code}`);
+  });
+
+  socket.on('status', ({ status, byMotion }) => {
+    const { code, role } = socket.data || {};
+    if (!code || role !== 'student') return;
+    const sess = sessions.get(code);
+    if (!sess) return;
+    const student = sess.students.get(socket.id);
+    if (!student) return;
+
+    const prev = student.status;
+
+    if (status === 'absent' && prev !== 'absent') {
+      student.status = 'absent';
+      student.absenceStart = Date.now();
+      io.to(`s_${code}`).emit('student_update', {
+        id: socket.id, name: student.name,
+        status: 'absent', ts: Date.now()
+      });
+    } else if (status === 'present' && prev !== 'present') {
+      if (prev === 'absent' && student.absenceStart) {
+        const dur = Date.now() - student.absenceStart;
+        student.logs.push({ start: student.absenceStart, end: Date.now(), dur });
+        student.totalAbsMs += dur;
+        student.absenceStart = null;
+        io.to(`s_${code}`).emit('student_update', {
+          id: socket.id, name: student.name,
+          status: 'present', dur, byMotion: !!byMotion, ts: Date.now()
+        });
+      } else {
+        student.status = 'present';
+        io.to(`s_${code}`).emit('student_update', {
+          id: socket.id, name: student.name, status: 'present', ts: Date.now()
+        });
+      }
+      student.status = 'present';
+    } else if (status === 'warning' && prev !== 'absent' && prev !== 'warning') {
+      student.status = 'warning';
+      io.to(`s_${code}`).emit('student_update', {
+        id: socket.id, name: student.name, status: 'warning', ts: Date.now()
+      });
+    } else if (status === 'idle' && prev !== 'idle') {
+      if (prev === 'absent' && student.absenceStart) {
+        const dur = Date.now() - student.absenceStart;
+        student.logs.push({ start: student.absenceStart, end: Date.now(), dur });
+        student.totalAbsMs += dur;
+        student.absenceStart = null;
+      }
+      student.status = 'idle';
+      io.to(`s_${code}`).emit('student_update', {
+        id: socket.id, name: student.name, status: 'idle', ts: Date.now()
+      });
+    }
+  });
+
+  socket.on('get_state', ({ code }, cb) => {
+    const { code: myCode } = socket.data || {};
+    if (!myCode || code !== myCode) return cb({ error: 'unauthorized' });
+    const sess = sessions.get(code);
+    if (!sess) return cb({ error: 'not found' });
+    cb({
+      students: Array.from(sess.students.values()).map(sanitize),
+      startTime: sess.startTime,
+      paused: sess.paused,
+    });
+  });
+
+  socket.on('set_pause', ({ code, paused }) => {
+    const { role, code: myCode } = socket.data || {};
+    if (role !== 'instructor' || code !== myCode) return;
+    const sess = sessions.get(code);
+    if (!sess) return;
+    sess.paused = paused;
+    io.to(`s_${code}`).emit('pause_state', { paused });
+  });
+
+  socket.on('set_threshold', ({ code, thrSec }) => {
+    const { role, code: myCode } = socket.data || {};
+    if (role !== 'instructor' || code !== myCode) return;
+    const sess = sessions.get(code);
+    if (!sess) return;
+    sess.thrSec = thrSec;
+    io.to(`s_${code}`).emit('threshold_changed', { thrSec });
+  });
+
+  socket.on('export_csv', ({ code }, cb) => {
+    const { role, code: myCode } = socket.data || {};
+    if (role !== 'instructor' || code !== myCode) return cb({ csv: '' });
+    const sess = sessions.get(code);
+    if (!sess) return cb({ csv: '' });
+    const now = Date.now();
+    const rows = ['\uFEFF학생명,이탈 시작,이탈 종료,이탈(초),참여율(%)'];
+    sess.students.forEach(st => {
+      const sm = now - st.joinTime;
+      const logs = [...st.logs];
+      if (st.status === 'absent' && st.absenceStart)
+        logs.push({ start: st.absenceStart, end: now, dur: now - st.absenceStart });
+      if (!logs.length) { rows.push(`${st.name},,,0,100`); return; }
+      logs.forEach(l => {
+        const rate = sm > 0 ? Math.round((sm - st.totalAbsMs) / sm * 100) : 100;
+        rows.push(`${st.name},${fmtTime(l.start)},${fmtTime(l.end)},${Math.round((l.dur||0)/1000)},${rate}`);
+      });
+    });
+    cb({ csv: rows.join('\n') });
+  });
+
+  socket.on('disconnect', () => {
+    const { code, role, name } = socket.data || {};
+    if (!code) return;
+    const sess = sessions.get(code);
+    if (!sess) return;
+    if (role === 'student') {
+      sess.students.delete(socket.id);
+      io.to(`s_${code}`).emit('student_left', { id: socket.id, name });
+      console.log(`[이탈] ${name} — 세션 ${code}`);
+    } else if (role === 'instructor') {
+      io.to(`s_${code}`).emit('session_ended');
+      sessions.delete(code);
+      console.log(`[세션 종료] ${code} — 강사 연결 끊김`);
+    }
+  });
+});
+
+function sanitize(st) {
+  return { id: st.id, name: st.name, status: st.status,
+    totalAbsMs: st.totalAbsMs, logs: st.logs.length, joinTime: st.joinTime };
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`\nFaceTrack 서버 실행 중 → http://localhost:${PORT}`);
+  console.log(`  수강생: http://localhost:${PORT}/student.html`);
+  console.log(`  강사:   http://localhost:${PORT}/instructor.html\n`);
+});

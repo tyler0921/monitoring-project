@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FaceTrack — 강사 대시보드</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0e13;--sf:#12151c;--card:#171b24;--bd:#1c2133;
+  --gr:#00e5a0;--wa:#f5a623;--da:#ff4d4d;--in:#4da6ff;
+  --tx:#dde4f0;--mu:#3a4560;
+  --fm:'JetBrains Mono',monospace;--fb:'Noto Sans KR',sans-serif;
+}
+body{background:var(--bg);color:var(--tx);font-family:var(--fb);min-height:100vh;display:flex;flex-direction:column}
+
+/* CREATE SCREEN */
+#create-screen{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
+.create-card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:36px 32px;width:100%;max-width:440px}
+.logo{font-family:var(--fm);font-size:22px;font-weight:700;color:var(--gr);letter-spacing:.12em;margin-bottom:4px}
+.logo em{color:var(--mu);font-style:normal}
+.logo-sub{font-size:12px;color:var(--mu);margin-bottom:28px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;color:var(--mu);margin-bottom:6px;font-family:var(--fm)}
+.field input{width:100%;background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;color:var(--tx);font-family:var(--fb);font-size:14px;outline:none;transition:border-color .2s}
+.field input:focus{border-color:var(--gr)}
+.field input::placeholder{color:var(--mu)}
+.btn-create{width:100%;background:var(--gr);color:#0c0e13;border:none;border-radius:8px;padding:12px;font-family:var(--fm);font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.06em;transition:opacity .2s}
+.btn-create:hover{opacity:.88}
+.divider{border:none;border-top:1px solid var(--bd);margin:20px 0}
+.server-row{display:flex;gap:8px;align-items:center}
+.server-row input{flex:1;font-size:12px}
+.server-row span{font-size:11px;color:var(--mu);white-space:nowrap;font-family:var(--fm)}
+
+/* DASHBOARD */
+#dashboard{display:none;flex-direction:column;height:100vh;overflow:hidden}
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--sf);border-bottom:1px solid var(--bd);flex-shrink:0}
+.hdr-logo{font-family:var(--fm);font-size:13px;font-weight:700;color:var(--gr);letter-spacing:.1em}
+.hdr-logo em{color:var(--mu);font-style:normal}
+.hdr-r{display:flex;align-items:center;gap:10px}
+.code-badge{font-family:var(--fm);font-size:14px;font-weight:700;letter-spacing:.2em;color:var(--gr);background:rgba(0,229,160,.1);border:1px solid rgba(0,229,160,.3);border-radius:8px;padding:4px 14px;cursor:pointer;transition:background .2s}
+.code-badge:hover{background:rgba(0,229,160,.2)}
+.code-label{font-family:var(--fm);font-size:10px;color:var(--mu)}
+.conn-chip{display:flex;align-items:center;gap:4px;font-family:var(--fm);font-size:10px;color:var(--mu)}
+.cdot{width:5px;height:5px;border-radius:50%;background:var(--mu)}
+.cdot.ok{background:var(--gr)}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);background:var(--bd);gap:1px;border-bottom:1px solid var(--bd);flex-shrink:0}
+.sc{background:var(--sf);padding:8px 14px}
+.sl{font-family:var(--fm);font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px}
+.sv{font-family:var(--fm);font-size:17px;font-weight:700}
+
+.body-area{display:grid;grid-template-columns:1fr 300px;gap:0;flex:1;min-height:0;overflow:hidden}
+.grid-area{padding:12px 14px;overflow-y:auto}
+.grid-area::-webkit-scrollbar{width:4px}
+.grid-area::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px}
+.grid-label{font-family:var(--fm);font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+.student-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:8px}
+.no-students{padding:40px 0;text-align:center;font-family:var(--fm);font-size:11px;color:var(--mu)}
+
+/* STUDENT CARD */
+.scard{background:var(--card);border:1px solid var(--bd);border-radius:8px;overflow:hidden;transition:border-color .3s}
+.scard.absent{border-color:rgba(255,77,77,.5)}
+.scard.warning{border-color:rgba(245,166,35,.4)}
+.scard-top{padding:10px 10px 6px;display:flex;align-items:center;gap:8px}
+.avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--fm);font-size:12px;font-weight:700;flex-shrink:0;transition:all .4s}
+.av-p{background:rgba(0,229,160,.12);color:var(--gr);border:1.5px solid rgba(0,229,160,.4)}
+.av-w{background:rgba(245,166,35,.12);color:var(--wa);border:1.5px solid rgba(245,166,35,.4)}
+.av-a{background:rgba(255,77,77,.12);color:var(--da);border:1.5px solid rgba(255,77,77,.4);animation:pp .8s ease-in-out infinite alternate}
+.av-o{background:rgba(58,69,96,.15);color:var(--mu);border:1.5px solid var(--bd)}
+@keyframes pp{from{opacity:.6}to{opacity:1}}
+.scard-name{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.sbadge{padding:2px 7px;border-radius:10px;font-family:var(--fm);font-size:8px;font-weight:700;flex-shrink:0}
+.bp{background:rgba(0,229,160,.15);color:var(--gr);border:1px solid rgba(0,229,160,.3)}
+.bw{background:rgba(245,166,35,.15);color:var(--wa);border:1px solid rgba(245,166,35,.3)}
+.ba{background:rgba(255,77,77,.15);color:var(--da);border:1px solid rgba(255,77,77,.3)}
+.bo{background:rgba(58,69,96,.2);color:var(--mu);border:1px solid var(--bd)}
+.scard-stats{padding:0 10px 8px;display:flex;justify-content:space-between;font-family:var(--fm);font-size:9px;color:var(--mu)}
+.scard-stats .at{color:var(--da)}
+.pbar{background:var(--bd);border-radius:2px;height:3px;overflow:hidden;margin:0 10px 8px}
+.pbar-fill{height:100%;border-radius:2px;background:var(--gr);transition:width .6s,background .3s}
+
+/* RIGHT PANEL */
+.right-panel{border-left:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}
+.rp-section{display:flex;flex-direction:column;overflow:hidden}
+.rp-section:first-child{flex:1;min-height:0}
+.rp-section:last-child{flex:0 0 200px;border-top:1px solid var(--bd)}
+.rp-hdr{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:var(--sf);border-bottom:1px solid var(--bd);flex-shrink:0}
+.rp-title{font-family:var(--fm);font-size:9px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.06em}
+.rp-body{overflow-y:auto;flex:1}
+.rp-body::-webkit-scrollbar{width:3px}
+.rp-body::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px}
+.alert-row{display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--bd);font-size:11px}
+.alert-row:last-child{border-bottom:none}
+.adot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.at2{font-family:var(--fm);font-size:9px;color:var(--mu);margin-left:auto;padding-left:6px;white-space:nowrap}
+.empty-msg{padding:16px 12px;font-family:var(--fm);font-size:10px;color:var(--mu);text-align:center}
+
+/* WS LOG */
+.wsrow{padding:4px 12px;border-bottom:1px solid var(--bd);font-family:var(--fm);font-size:9px;color:var(--mu)}
+.wsrow:last-child{border-bottom:none}
+
+/* BOTTOM BAR */
+.bbar{display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--sf);border-top:1px solid var(--bd);flex-shrink:0}
+.btn{font-family:var(--fm);font-size:10px;padding:6px 14px;border-radius:5px;border:1px solid var(--bd);cursor:pointer;background:transparent;color:var(--tx);transition:all .2s}
+.btn:hover{background:rgba(255,255,255,.05)}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+.btn-acc{background:var(--gr);color:#0c0e13;border-color:var(--gr)}
+.btn-acc:hover{opacity:.88}
+.btn-warn{background:rgba(245,166,35,.15);color:var(--wa);border-color:rgba(245,166,35,.4)}
+.thr-row{margin-left:auto;display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:10px;color:var(--mu)}
+select{background:var(--sf);color:var(--tx);border:1px solid var(--bd);border-radius:4px;padding:3px 7px;font-family:var(--fm);font-size:10px}
+</style>
+</head>
+<body>
+
+<!-- CREATE SCREEN -->
+<div id="create-screen">
+  <div class="create-card">
+    <div class="logo">FACE<em>TRACK</em></div>
+    <div class="logo-sub">강사 대시보드 — 수업 세션을 시작하세요</div>
+    <div class="field">
+      <label>강사 이름</label>
+      <input id="inp-name" type="text" placeholder="김선생" autocomplete="off">
+    </div>
+    <div id="create-err" style="color:var(--da);font-size:12px;font-family:var(--fm);margin-bottom:12px;display:none"></div>
+    <button class="btn-create" id="btn-create">세션 만들기</button>
+    <hr class="divider">
+    <div class="field">
+      <label>서버 주소</label>
+      <div class="server-row">
+        <input id="inp-server" type="text" value="http://localhost:3000" placeholder="http://서버주소:3000">
+        <span>기본값</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+  <div class="hdr">
+    <div class="hdr-logo">FACE<em>TRACK</em> <span style="font-size:10px;font-weight:400;color:var(--mu);margin-left:6px">강사 대시보드</span></div>
+    <div class="hdr-r">
+      <div>
+        <div class="code-label">세션 코드 (클릭해서 복사)</div>
+        <div class="code-badge" id="code-badge" onclick="copyCode()">------</div>
+      </div>
+      <div class="conn-chip"><span class="cdot" id="cdot"></span><span id="clbl">연결 중</span></div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="sc"><div class="sl">접속 학생</div><div class="sv" id="st-tot">0</div></div>
+    <div class="sc"><div class="sl">이탈 중</div><div class="sv" id="st-abs" style="color:var(--da)">0</div></div>
+    <div class="sc"><div class="sl">평균 참여율</div><div class="sv" id="st-rate" style="color:var(--gr)">--%</div></div>
+    <div class="sc"><div class="sl">세션 시간</div><div class="sv" id="st-time" style="font-size:15px">00:00</div></div>
+  </div>
+
+  <div class="body-area">
+    <div class="grid-area">
+      <div class="grid-label">수강생 현황</div>
+      <div class="student-grid" id="sgrid">
+        <div class="no-students" id="no-students">학생 입장을 기다리는 중...<br><br><span style="font-size:10px;opacity:.6">세션 코드를 학생들에게 공유하세요</span></div>
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <div class="rp-section">
+        <div class="rp-hdr">
+          <span class="rp-title">실시간 알림</span>
+          <button class="btn" style="padding:2px 8px;font-size:9px" onclick="clearAlerts()">지우기</button>
+        </div>
+        <div class="rp-body" id="alert-list">
+          <div class="empty-msg" id="alert-empty">알림 없음</div>
+        </div>
+      </div>
+      <div class="rp-section">
+        <div class="rp-hdr"><span class="rp-title">서버 이벤트 로그</span></div>
+        <div class="rp-body" id="ws-log">
+          <div class="empty-msg">이벤트 없음</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bbar">
+    <button class="btn" id="btn-pause" onclick="togglePause()">일시정지</button>
+    <button class="btn btn-acc" id="btn-csv" disabled onclick="exportCSV()">↓ CSV 내보내기</button>
+    <div class="thr-row">이탈 기준 <select id="thr-disp"><option value="10">10초</option><option value="20" selected>20초</option><option value="30">30초</option></select></div>
+    <button class="btn" style="margin-left:auto;color:var(--da);border-color:rgba(255,77,77,.3)" onclick="endSession()">세션 종료</button>
+  </div>
+</div>
+
+<script>
+let socket = null;
+let students = new Map();
+let sessStart = null;
+let sessCode = null;
+let paused = false;
+let tickInt = null;
+let AC = null;
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fms(ms) {
+  if (!ms || ms < 0) ms = 0;
+  const s = Math.floor(ms / 1000), m = Math.floor(s / 60);
+  return m > 0 ? `${m}분 ${String(s%60).padStart(2,'0')}초` : `${s}초`;
+}
+function ft(ts) {
+  const d = new Date(ts);
+  return [d.getHours(),d.getMinutes(),d.getSeconds()].map(v=>String(v).padStart(2,'0')).join(':');
+}
+
+function beep(type) {
+  try {
+    if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.connect(g); g.connect(AC.destination);
+    const t = AC.currentTime;
+    if (type === 'abs') { o.frequency.setValueAtTime(523,t); o.frequency.setValueAtTime(392,t+.12); g.gain.setValueAtTime(.18,t); g.gain.exponentialRampToValueAtTime(.001,t+.45); }
+    else { o.frequency.setValueAtTime(440,t); o.frequency.setValueAtTime(554,t+.1); g.gain.setValueAtTime(.14,t); g.gain.exponentialRampToValueAtTime(.001,t+.3); }
+    o.start(t); o.stop(t+.5);
+  } catch(e) {}
+}
+
+function setConn(st) {
+  const dot = document.getElementById('cdot'), lbl = document.getElementById('clbl');
+  const m = { ok: ['ok','연결됨'], err: ['err','연결 끊김'], connecting: ['','연결 중'] };
+  const [cl, tx] = m[st] || m.connecting;
+  dot.className = `cdot ${cl}`; lbl.textContent = tx;
+}
+
+function wsLog(dir, evt, data) {
+  const l = document.getElementById('ws-log');
+  l.querySelector('.empty-msg')?.remove();
+  const r = document.createElement('div'); r.className = 'wsrow';
+  const col = dir === 'out' ? '#4da6ff' : '#00e5a0';
+  const str = esc(typeof data === 'object' ? JSON.stringify(data).slice(0, 40) : String(data));
+  r.innerHTML = `<span style="color:${col}">${dir === 'out' ? '↑' : '↓'}</span> <span style="color:var(--tx)">${esc(evt)}</span> <span>${str}</span>`;
+  l.insertBefore(r, l.firstChild);
+  while (l.children.length > 30) l.removeChild(l.lastChild);
+}
+
+function addAlert(name, type, dur, byMotion) {
+  const l = document.getElementById('alert-list');
+  document.getElementById('alert-empty')?.remove();
+  const r = document.createElement('div'); r.className = 'alert-row';
+  const col = type === 'abs' ? 'var(--da)' : type === 'join' ? 'var(--in)' : type === 'leave' ? 'var(--mu)' : 'var(--gr)';
+  const mot = byMotion ? ' <span style="font-size:9px;color:var(--gr)">[자세]</span>' : '';
+  const safeName = esc(name);
+  const msg = type === 'abs' ? `${safeName} 이탈` : type === 'join' ? `${safeName} 입장` : type === 'leave' ? `${safeName} 퇴장` : `${safeName} 복귀 (${fms(dur)})${mot}`;
+  r.innerHTML = `<span class="adot" style="background:${col}"></span><span style="flex:1">${msg}</span><span class="at2">${ft(Date.now())}</span>`;
+  l.insertBefore(r, l.firstChild);
+  while (l.children.length > 80) l.removeChild(l.lastChild);
+}
+function clearAlerts() {
+  document.getElementById('alert-list').innerHTML = '<div class="empty-msg" id="alert-empty">알림 없음</div>';
+}
+
+function renderCard(st) {
+  let card = document.getElementById(`sc-${st.id}`);
+  if (!card) {
+    document.getElementById('no-students')?.remove();
+    card = document.createElement('div');
+    card.id = `sc-${st.id}`;
+    document.getElementById('sgrid').appendChild(card);
+  }
+  const statusCls = { present: '', warning: 'warning', absent: 'absent', offline: '', idle: '' };
+  const avCls = { present: 'av-p', warning: 'av-w', absent: 'av-a', offline: 'av-o', idle: 'av-o' };
+  const badgeCls = { present: 'bp', warning: 'bw', absent: 'ba', offline: 'bo', idle: 'bo' };
+  const badgeTx = { present: 'PRESENT', warning: 'WARNING', absent: 'ABSENT', offline: 'OFFLINE', idle: 'IDLE' };
+  const ini = esc(st.name.charAt(0));
+  const now = Date.now();
+  const sessMs = st.joinTime ? now - st.joinTime : 1;
+  const curAbsMs = st.status === 'absent' && st.absenceStart ? now - st.absenceStart : 0;
+  const totalAbs = (st.totalAbsMs || 0) + curAbsMs;
+  const rate = sessMs > 2000 ? Math.max(0, Math.min(100, (sessMs - totalAbs) / sessMs * 100)) : 100;
+  const rateColor = rate >= 80 ? 'var(--gr)' : rate >= 60 ? 'var(--wa)' : 'var(--da)';
+
+  card.className = `scard ${statusCls[st.status] || ''}`;
+  card.innerHTML = `
+    <div class="scard-top">
+      <div class="avatar ${avCls[st.status] || 'av-o'}">${ini}</div>
+      <div class="scard-name">${esc(st.name)}</div>
+      <div class="sbadge ${badgeCls[st.status] || 'bo'}">${badgeTx[st.status] || 'OFFLINE'}</div>
+    </div>
+    <div class="scard-stats">
+      <span>이탈 ${(st.logs || 0) + (st.status === 'absent' ? 1 : 0)}회</span>
+      ${totalAbs > 1000 ? `<span class="at">${fms(totalAbs)}</span>` : ''}
+    </div>
+    <div class="pbar"><div class="pbar-fill" style="width:${rate}%;background:${rateColor}"></div></div>`;
+}
+
+function removeCard(id) {
+  document.getElementById(`sc-${id}`)?.remove();
+  if (!document.getElementById('sgrid').children.length) {
+    const d = document.createElement('div');
+    d.className = 'no-students'; d.id = 'no-students';
+    d.innerHTML = '학생이 없습니다';
+    document.getElementById('sgrid').appendChild(d);
+  }
+}
+
+function updateGlobal() {
+  const all = Array.from(students.values());
+  const absent = all.filter(s => s.status === 'absent');
+  document.getElementById('st-tot').textContent = all.length;
+  const ae = document.getElementById('st-abs');
+  ae.textContent = absent.length;
+  ae.style.color = absent.length > 0 ? 'var(--da)' : 'var(--tx)';
+  if (all.length > 0) {
+    const now = Date.now();
+    let sum = 0;
+    all.forEach(s => {
+      const sm = s.joinTime ? now - s.joinTime : 1;
+      const ca = s.status === 'absent' && s.absenceStart ? now - s.absenceStart : 0;
+      sum += Math.max(0, Math.min(100, (sm - (s.totalAbsMs||0) - ca) / sm * 100));
+    });
+    const avg = Math.round(sum / all.length);
+    const re = document.getElementById('st-rate');
+    re.textContent = `${avg}%`;
+    re.style.color = avg >= 80 ? 'var(--gr)' : avg >= 60 ? 'var(--wa)' : 'var(--da)';
+  }
+  all.forEach(s => renderCard(s));
+}
+
+function copyCode() {
+  if (!sessCode) return;
+  navigator.clipboard.writeText(sessCode).then(() => {
+    const b = document.getElementById('code-badge');
+    b.textContent = '복사됨!';
+    setTimeout(() => b.textContent = sessCode, 1500);
+  });
+}
+
+function togglePause() {
+  paused = !paused;
+  socket?.emit('set_pause', { code: sessCode, paused });
+  const btn = document.getElementById('btn-pause');
+  btn.textContent = paused ? '감지 재개' : '일시정지';
+  btn.className = paused ? 'btn btn-warn' : 'btn';
+}
+
+function exportCSV() {
+  socket?.emit('export_csv', { code: sessCode }, ({ csv }) => {
+    if (!csv) return;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `facetrack_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  });
+}
+
+function endSession() {
+  if (!confirm('세션을 종료하시겠습니까?')) return;
+  socket?.disconnect();
+  location.reload();
+}
+
+document.getElementById('btn-create').addEventListener('click', async () => {
+  const name = document.getElementById('inp-name').value.trim();
+  const serverUrl = document.getElementById('inp-server').value.trim() || 'http://localhost:3000';
+  const err = document.getElementById('create-err');
+  err.style.display = 'none';
+  if (!name) { err.textContent = '이름을 입력해주세요.'; err.style.display = 'block'; return; }
+
+  document.getElementById('btn-create').textContent = '연결 중...';
+  document.getElementById('btn-create').disabled = true;
+
+  if (socket) { socket.disconnect(); socket = null; }
+  const { io } = await import('https://cdn.socket.io/4.7.2/socket.io.esm.min.js');
+  socket = io(serverUrl);
+
+  socket.on('connect', () => {
+    setConn('ok');
+    socket.emit('create_session', { instructorName: name }, ({ code }) => {
+      sessCode = code; sessStart = Date.now();
+      document.getElementById('create-screen').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'flex';
+      document.getElementById('code-badge').textContent = code;
+      document.getElementById('btn-csv').disabled = false;
+      wsLog('in', 'session_created', { code });
+      tickInt = setInterval(() => {
+        if (!sessStart) return;
+        const ms = Date.now() - sessStart;
+        const m = Math.floor(ms/60000), s = Math.floor((ms%60000)/1000);
+        document.getElementById('st-time').textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        updateGlobal();
+      }, 1000);
+    });
+  });
+
+  socket.on('connect_error', () => {
+    err.textContent = '서버에 연결할 수 없습니다.';
+    err.style.display = 'block';
+    document.getElementById('btn-create').textContent = '세션 만들기';
+    document.getElementById('btn-create').disabled = false;
+    setConn('err');
+    socket.disconnect(); socket = null;
+  });
+  socket.on('disconnect', () => setConn('err'));
+
+  socket.on('student_joined', ({ student }) => {
+    student.absenceStart = null;
+    students.set(student.id, student);
+    renderCard(student);
+    updateGlobal();
+    addAlert(student.name, 'join', 0);
+    wsLog('in', 'student_joined', { name: student.name });
+  });
+
+  socket.on('student_update', ({ id, name, status, dur, byMotion }) => {
+    const st = students.get(id);
+    if (!st) return;
+    const prev = st.status;
+    st.status = status;
+    if (status === 'absent') {
+      st.absenceStart = Date.now();
+      addAlert(name, 'abs', 0);
+      beep('abs');
+    } else if (status === 'present' && prev === 'absent') {
+      st.totalAbsMs = (st.totalAbsMs || 0) + (dur || 0);
+      st.logs = (st.logs || 0) + 1;
+      st.absenceStart = null;
+      addAlert(name, 'ret', dur, byMotion);
+      beep('ret');
+    } else if (status === 'present' || status === 'warning') {
+      st.absenceStart = null;
+    }
+    renderCard(st);
+    updateGlobal();
+    wsLog('in', `status:${status}`, { name });
+  });
+
+  socket.on('student_left', ({ id, name }) => {
+    students.delete(id);
+    removeCard(id);
+    addAlert(name, 'leave', 0);
+    updateGlobal();
+    wsLog('in', 'student_left', { name });
+  });
+
+  document.getElementById('thr-disp').addEventListener('change', () => {
+    const thrSec = parseInt(document.getElementById('thr-disp').value);
+    socket?.emit('set_threshold', { code: sessCode, thrSec });
+  });
+});
+</script>
+</body>
+</html>
