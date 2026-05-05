@@ -304,29 +304,57 @@ document.getElementById('inp-code').addEventListener('input', e => {
   e.target.value = e.target.value.toUpperCase();
 });
 
-document.getElementById('btn-join').addEventListener('click', async () => {
+function validateServerUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+// Enter 키로 입장
+['inp-name', 'inp-code', 'inp-server'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-join').click();
+  });
+});
+
+document.getElementById('btn-join').addEventListener('click', () => {
   const name = document.getElementById('inp-name').value.trim();
   const code = document.getElementById('inp-code').value.trim().toUpperCase();
   const serverUrl = document.getElementById('inp-server').value.trim() || 'http://localhost:3000';
   const err = document.getElementById('join-err');
+  const btnJoin = document.getElementById('btn-join');
   err.style.display = 'none';
   if (!name) { err.textContent = '이름을 입력해주세요.'; err.style.display = 'block'; return; }
   if (!code || code.length < 4) { err.textContent = '세션 코드를 입력해주세요.'; err.style.display = 'block'; return; }
+  if (!validateServerUrl(serverUrl)) { err.textContent = '올바른 서버 주소를 입력해주세요. (예: http://localhost:3000)'; err.style.display = 'block'; return; }
 
-  document.getElementById('btn-join').textContent = '연결 중...';
-  document.getElementById('btn-join').disabled = true;
+  btnJoin.textContent = '연결 중...';
+  btnJoin.disabled = true;
 
   if (socket) { socket.disconnect(); socket = null; }
-  const { io } = await import('https://cdn.socket.io/4.7.2/socket.io.esm.min.js');
   socket = io(serverUrl);
 
   socket.on('connect', () => {
     setConn('ok');
+    if (sessStart) {
+      // 재연결 — 서버에 재등록하되 로컬 통계는 유지
+      socket.emit('join_session', { name, code }, (res) => {
+        if (!res.error) {
+          thrSec = res.thrSec || thrSec;
+          paused = res.paused || false;
+          document.getElementById('pause-banner').style.display = paused ? 'block' : 'none';
+        }
+      });
+      return;
+    }
     socket.emit('join_session', { name, code }, (res) => {
       if (res.error) {
         err.textContent = res.error; err.style.display = 'block';
-        document.getElementById('btn-join').textContent = '입장하기';
-        document.getElementById('btn-join').disabled = false;
+        btnJoin.textContent = '입장하기';
+        btnJoin.disabled = false;
         socket.disconnect(); socket = null;
         return;
       }
@@ -342,10 +370,11 @@ document.getElementById('btn-join').addEventListener('click', async () => {
   });
 
   socket.on('connect_error', () => {
+    if (sessStart) { setConn('err'); return; } // 세션 중 재연결 실패 — UI만 업데이트
     err.textContent = '서버에 연결할 수 없습니다. 서버 주소를 확인해주세요.';
     err.style.display = 'block';
-    document.getElementById('btn-join').textContent = '입장하기';
-    document.getElementById('btn-join').disabled = false;
+    btnJoin.textContent = '입장하기';
+    btnJoin.disabled = false;
     setConn('err');
     socket.disconnect(); socket = null;
   });
