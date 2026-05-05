@@ -216,7 +216,7 @@ io.on('connection', (socket) => {
     const sess = sessions.get(code);
     if (!sess) return cb({ csv: '' });
     const now = Date.now();
-    const rows = ['\uFEFF학생명,이탈 시작,이탈 종료,이탈(초),참여율(%)'];
+    const rows = ['학생명,이탈 시작,이탈 종료,이탈(초),참여율(%)'];
     sess.students.forEach(st => {
       const sm = now - st.joinTime;
       const logs = [...st.logs];
