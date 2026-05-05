@@ -10,6 +10,24 @@ const io = new Server(server, { cors: { origin: '*' } });
 app.use(express.static(path.join(__dirname, 'public')));
 
 const sessions = new Map();
+const CODE_RE = /^[A-Z0-9]{5}$/;
+const NAME_MAX_LEN = 30;
+const VALID_STATUSES = new Set(['absent', 'present', 'warning', 'idle']);
+
+function normalizeName(raw) {
+  return String(raw || '').trim().slice(0, NAME_MAX_LEN);
+}
+
+function isValidThreshold(value) {
+  return Number.isInteger(value) && value >= 5 && value <= 120;
+}
+
+function csvCell(value) {
+  const text = String(value ?? '');
+  const formulaSafe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  const escaped = formulaSafe.replace(/"/g, '""');
+  return `"${escaped}"`;
+}
 
 function genCode() {
   let code;
@@ -28,10 +46,12 @@ function fmtTime(ts) {
 io.on('connection', (socket) => {
 
   socket.on('create_session', ({ instructorName }, cb) => {
+    const safeName = normalizeName(instructorName);
+    if (!safeName) return cb({ error: '강사 이름을 입력해주세요.' });
     const code = genCode();
     sessions.set(code, {
       code,
-      instructorName,
+      instructorName: safeName,
       instructorSocket: socket.id,
       students: new Map(),
       startTime: Date.now(),
@@ -41,16 +61,21 @@ io.on('connection', (socket) => {
     socket.join(`s_${code}`);
     socket.data = { code, role: 'instructor' };
     cb({ code });
-    console.log(`[세션 생성] ${code} — ${instructorName}`);
+    console.log(`[세션 생성] ${code} — ${safeName}`);
   });
 
   socket.on('join_session', ({ name, code }, cb) => {
-    const sess = sessions.get(code);
+    const safeName = normalizeName(name);
+    const safeCode = String(code || '').trim().toUpperCase();
+    if (!safeName) return cb({ error: '이름을 입력해주세요.' });
+    if (!CODE_RE.test(safeCode)) return cb({ error: '세션 코드는 5자리 영숫자여야 합니다.' });
+
+    const sess = sessions.get(safeCode);
     if (!sess) return cb({ error: '세션 코드가 올바르지 않습니다.' });
 
     const student = {
       id: socket.id,
-      name,
+      name: safeName,
       status: 'idle',
       absenceStart: null,
       logs: [],
@@ -58,15 +83,16 @@ io.on('connection', (socket) => {
       joinTime: Date.now(),
     };
     sess.students.set(socket.id, student);
-    socket.join(`s_${code}`);
-    socket.data = { code, role: 'student', name };
+    socket.join(`s_${safeCode}`);
+    socket.data = { code: safeCode, role: 'student', name: safeName };
 
-    io.to(`s_${code}`).emit('student_joined', { student: sanitize(student) });
+    io.to(`s_${safeCode}`).emit('student_joined', { student: sanitize(student) });
     cb({ ok: true, sessionStart: sess.startTime, paused: sess.paused, thrSec: sess.thrSec });
-    console.log(`[참여] ${name} → 세션 ${code}`);
+    console.log(`[참여] ${safeName} → 세션 ${safeCode}`);
   });
 
   socket.on('status', ({ status, byMotion }) => {
+    if (!VALID_STATUSES.has(status)) return;
     const { code, role } = socket.data || {};
     if (!code || role !== 'student') return;
     const sess = sessions.get(code);
@@ -145,8 +171,10 @@ io.on('connection', (socket) => {
     if (role !== 'instructor' || code !== myCode) return;
     const sess = sessions.get(code);
     if (!sess) return;
-    sess.thrSec = thrSec;
-    io.to(`s_${code}`).emit('threshold_changed', { thrSec });
+    const nextThr = Number(thrSec);
+    if (!isValidThreshold(nextThr)) return;
+    sess.thrSec = nextThr;
+    io.to(`s_${code}`).emit('threshold_changed', { thrSec: nextThr });
   });
 
   socket.on('export_csv', ({ code }, cb) => {
@@ -161,10 +189,10 @@ io.on('connection', (socket) => {
       const logs = [...st.logs];
       if (st.status === 'absent' && st.absenceStart)
         logs.push({ start: st.absenceStart, end: now, dur: now - st.absenceStart });
-      if (!logs.length) { rows.push(`${st.name},,,0,100`); return; }
+      if (!logs.length) { rows.push(`${csvCell(st.name)},,,0,100`); return; }
       logs.forEach(l => {
         const rate = sm > 0 ? Math.round((sm - st.totalAbsMs) / sm * 100) : 100;
-        rows.push(`${st.name},${fmtTime(l.start)},${fmtTime(l.end)},${Math.round((l.dur||0)/1000)},${rate}`);
+        rows.push(`${csvCell(st.name)},${fmtTime(l.start)},${fmtTime(l.end)},${Math.round((l.dur||0)/1000)},${rate}`);
       });
     });
     cb({ csv: rows.join('\n') });
