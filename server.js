@@ -36,6 +36,11 @@ function isValidThreshold(value) {
   return Number.isInteger(value) && value >= 5 && value <= 120;
 }
 
+function isValidCoords(c) {
+  if (!c || typeof c !== 'object') return false;
+  return ['cx', 'cy', 'w', 'h'].every(k => typeof c[k] === 'number' && c[k] >= 0 && c[k] <= 1);
+}
+
 function csvCell(value) {
   const text = String(value ?? '');
   const formulaSafe = /^[=+\-@]/.test(text) ? `'${text}` : text;
@@ -124,7 +129,7 @@ io.on('connection', (socket) => {
     console.log(`[참여] ${safeName} → 세션 ${safeCode}`);
   });
 
-  socket.on('status', ({ status, byMotion }) => {
+  socket.on('status', ({ status, byMotion, coords }) => {
     if (!VALID_STATUSES.has(status)) return;
     const { code, role } = socket.data || {};
     if (!code || role !== 'student') return;
@@ -133,16 +138,19 @@ io.on('connection', (socket) => {
     const student = sess.students.get(socket.id);
     if (!student) return;
 
+    const safeCoords = isValidCoords(coords) ? coords : null;
     const prev = student.status;
 
     if (status === 'absent' && prev !== 'absent') {
       student.status = 'absent';
       student.absenceStart = Date.now();
+      student.coords = null;
       io.to(`s_${code}`).emit('student_update', {
         id: socket.id, name: student.name,
-        status: 'absent', ts: Date.now()
+        status: 'absent', ts: Date.now(), coords: null,
       });
     } else if (status === 'present' && prev !== 'present') {
+      student.coords = safeCoords;
       if (prev === 'absent' && student.absenceStart) {
         const dur = Date.now() - student.absenceStart;
         student.logs.push({ start: student.absenceStart, end: Date.now(), dur });
@@ -150,19 +158,20 @@ io.on('connection', (socket) => {
         student.absenceStart = null;
         io.to(`s_${code}`).emit('student_update', {
           id: socket.id, name: student.name,
-          status: 'present', dur, byMotion: !!byMotion, ts: Date.now()
+          status: 'present', dur, byMotion: !!byMotion, ts: Date.now(), coords: safeCoords,
         });
       } else {
         student.status = 'present';
         io.to(`s_${code}`).emit('student_update', {
-          id: socket.id, name: student.name, status: 'present', ts: Date.now()
+          id: socket.id, name: student.name,
+          status: 'present', ts: Date.now(), coords: safeCoords,
         });
       }
       student.status = 'present';
     } else if (status === 'warning' && prev !== 'absent' && prev !== 'warning') {
       student.status = 'warning';
       io.to(`s_${code}`).emit('student_update', {
-        id: socket.id, name: student.name, status: 'warning', ts: Date.now()
+        id: socket.id, name: student.name, status: 'warning', ts: Date.now(), coords: null,
       });
     } else if (status === 'idle' && prev !== 'idle') {
       if (prev === 'absent' && student.absenceStart) {
@@ -172,8 +181,9 @@ io.on('connection', (socket) => {
         student.absenceStart = null;
       }
       student.status = 'idle';
+      student.coords = null;
       io.to(`s_${code}`).emit('student_update', {
-        id: socket.id, name: student.name, status: 'idle', ts: Date.now()
+        id: socket.id, name: student.name, status: 'idle', ts: Date.now(), coords: null,
       });
     }
   });
@@ -263,7 +273,8 @@ io.on('connection', (socket) => {
 
 function sanitize(st) {
   return { id: st.id, name: st.name, status: st.status,
-    totalAbsMs: st.totalAbsMs, logs: st.logs.length, joinTime: st.joinTime, absenceStart: st.absenceStart };
+    totalAbsMs: st.totalAbsMs, logs: st.logs.length, joinTime: st.joinTime,
+    absenceStart: st.absenceStart, coords: st.coords ?? null };
 }
 
 const PORT = process.env.PORT || 3000;

@@ -65,11 +65,26 @@ function addLog(entry) {
   document.getElementById('log-body').insertBefore(r, document.getElementById('log-body').firstChild);
 }
 
-function emitStatus(status, byMotion, force = false) {
+function emitStatus(status, byMotion, force = false, coords = null) {
   if (!force && lastSentStatus === status) return;
-  if (status === 'present' && byMotion) socket?.emit('status', { status, byMotion: true });
-  else socket?.emit('status', { status });
+  const payload = { status };
+  if (byMotion) payload.byMotion = true;
+  if (coords)   payload.coords = coords;
+  socket?.emit('status', payload);
   lastSentStatus = status;
+}
+
+function extractCoords(det) {
+  if (!det) return null;
+  const vw = vid.videoWidth  || 640;
+  const vh = vid.videoHeight || 480;
+  return {
+    cx: +((det.box.x + det.box.width  / 2) / vw).toFixed(3),
+    cy: +((det.box.y + det.box.height / 2) / vh).toFixed(3),
+    w:  +(det.box.width  / vw).toFixed(3),
+    h:  +(det.box.height / vh).toFixed(3),
+    score: Math.round(det.score * 100),
+  };
 }
 
 const MOTION = {
@@ -165,6 +180,7 @@ async function detect() {
   ]);
   const faceConf = det ? Math.round(det.score * 100) : 0;
   const frames = Math.ceil(thrSec * 1000 / 500);
+  const coords = extractCoords(det);
 
   drawBox(det);
 
@@ -177,6 +193,16 @@ async function detect() {
   document.getElementById('mot-b').style.width = `${motion.bar}%`;
   document.getElementById('mot-b').style.background = motion.color;
   document.getElementById('conf-lbl').textContent = det ? `${faceConf}%` : '';
+  if (!poseDetector) {
+    document.getElementById('pose-v').textContent = '비활성';
+    document.getElementById('pose-v').style.color = 'var(--mu)';
+    document.getElementById('pose-b').style.width = '0%';
+  } else {
+    document.getElementById('pose-v').textContent = pose.detected ? `${pose.conf}%` : '없음';
+    document.getElementById('pose-v').style.color = pose.detected ? 'var(--gr)' : 'var(--mu)';
+    document.getElementById('pose-b').style.width = `${pose.conf}%`;
+    document.getElementById('pose-b').style.background = pose.detected ? 'var(--gr)' : 'var(--mu)';
+  }
 
   const personPresent = pose.detected
     || motion.key === 'NORMAL_MOTION'
@@ -191,9 +217,9 @@ async function detect() {
       const entry = { s: absStart, e: Date.now(), d: dur };
       absLogs.push(entry); totalAbsMs += dur; absStart = null;
       addLog(entry);
-      emitStatus('present');
+      emitStatus('present', false, false, coords);
     } else {
-      emitStatus('present');
+      emitStatus('present', false, false, coords);
     }
     setStatus('present');
   } else if (personPresent) {
@@ -206,7 +232,7 @@ async function detect() {
       const entry = { s: absStart, e: Date.now(), d: dur, byMotion };
       absLogs.push(entry); totalAbsMs += dur; absStart = null;
       addLog(entry);
-      emitStatus('present', byMotion);
+      emitStatus('present', byMotion, false, null);
       setStatus('present');
     } else {
       emitStatus('warning');
@@ -220,7 +246,7 @@ async function detect() {
       if (noFaceFrames >= frames) {
         isAbsent = true;
         absStart = noFaceStart;
-        emitStatus('absent');
+        emitStatus('absent', false, false, null);
         setStatus('absent');
       } else {
         emitStatus('warning');
@@ -408,6 +434,8 @@ document.getElementById('btn-join').addEventListener('click', () => {
       await initPoseDetector();
     } catch (e) {
       console.warn('자세 모델 로딩 실패, 얼굴 감지만 사용합니다.', e);
+      document.getElementById('pose-v').textContent = '비활성';
+      document.getElementById('pose-v').style.color = 'var(--da)';
     }
     document.getElementById('load-ov').style.display = 'none';
     document.getElementById('btn-start').disabled = false;

@@ -80,6 +80,10 @@ body{background:var(--bg);color:var(--tx);font-family:var(--fb);min-height:100vh
 .scard-stats .at{color:var(--da)}
 .pbar{background:var(--bd);border-radius:2px;height:3px;overflow:hidden;margin:0 10px 8px}
 .pbar-fill{height:100%;border-radius:2px;background:var(--gr);transition:width .6s,background .3s}
+.face-map{position:relative;margin:0 10px 8px;height:30px;background:#0a0c12;border:1px solid var(--bd);border-radius:4px;overflow:hidden}
+.face-map--empty{display:flex;align-items:center;justify-content:center}
+.face-dot{position:absolute;transform:translate(-50%,-50%);background:rgba(0,229,160,.25);border:1.5px solid var(--gr);border-radius:3px;min-width:10%;transition:left .4s,top .4s,width .4s}
+.face-score{font-family:var(--fm);font-size:8px;color:var(--mu);position:absolute;bottom:2px;right:4px}
 
 /* RIGHT PANEL */
 .right-panel{border-left:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}

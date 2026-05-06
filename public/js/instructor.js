@@ -86,6 +86,18 @@ function renderCard(st) {
   const rate = sessMs > 2000 ? Math.max(0, Math.min(100, (sessMs - totalAbs) / sessMs * 100)) : 100;
   const rateColor = rate >= 80 ? 'var(--gr)' : rate >= 60 ? 'var(--wa)' : 'var(--da)';
 
+  const faceMap = st.coords
+    ? `<div class="face-map" title="얼굴 위치 (신뢰도 ${st.coords.score}%)">
+         <div class="face-dot" style="
+           left:${(st.coords.cx * 100).toFixed(1)}%;
+           top:${(st.coords.cy * 100).toFixed(1)}%;
+           width:${Math.max(st.coords.w * 100, 10).toFixed(1)}%;
+           padding-bottom:${Math.max(st.coords.h * 100, 10).toFixed(1)}%;
+         "></div>
+         <span class="face-score">${st.coords.score}%</span>
+       </div>`
+    : `<div class="face-map face-map--empty"><span class="face-score">얼굴 없음</span></div>`;
+
   card.className = `scard ${statusCls[st.status] || ''}`;
   card.innerHTML = `
     <div class="scard-top">
@@ -97,7 +109,8 @@ function renderCard(st) {
       <span>이탈 ${(st.logs || 0) + (st.status === 'absent' ? 1 : 0)}회</span>
       ${totalAbs > 1000 ? `<span class="at">${fms(totalAbs)}</span>` : ''}
     </div>
-    <div class="pbar"><div class="pbar-fill" style="width:${rate}%;background:${rateColor}"></div></div>`;
+    <div class="pbar"><div class="pbar-fill" style="width:${rate}%;background:${rateColor}"></div></div>
+    ${faceMap}`;
 }
 
 function removeCard(id) {
@@ -253,6 +266,7 @@ function startSession(name, serverUrl) {
     student.absenceStart = null;
     student.totalAbsMs = student.totalAbsMs || 0;
     student.logs = student.logs || 0;
+    student.coords = student.coords || null;
     students.set(student.id, student);
     renderCard(student);
     updateGlobal();
@@ -260,11 +274,12 @@ function startSession(name, serverUrl) {
     wsLog('in', 'student_joined', { name: student.name });
   });
 
-  socket.on('student_update', ({ id, name, status, dur, byMotion }) => {
+  socket.on('student_update', ({ id, name, status, dur, byMotion, coords }) => {
     const st = students.get(id);
     if (!st) return;
     const prev = st.status;
     st.status = status;
+    if (coords !== undefined) st.coords = coords;
     if (status === 'absent') {
       st.absenceStart = Date.now();
       addAlert(name, 'abs', 0);
