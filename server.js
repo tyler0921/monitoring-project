@@ -26,7 +26,15 @@ app.use(express.static(path.join(__dirname, 'public')));
 const sessions = new Map();
 const CODE_RE = /^[A-Z0-9]{5}$/;
 const NAME_MAX_LEN = 30;
-const VALID_STATUSES = new Set(['absent', 'present', 'warning', 'idle']);
+const VALID_STATUSES = new Set([
+  'absent',
+  'present',
+  'warning',
+  'idle',
+  'look_away_short',
+  'look_away_long',
+  'drowsy_risk',
+]);
 
 function normalizeName(raw) {
   return String(raw || '').trim().slice(0, NAME_MAX_LEN);
@@ -168,11 +176,6 @@ io.on('connection', (socket) => {
         });
       }
       student.status = 'present';
-    } else if (status === 'warning' && prev !== 'absent' && prev !== 'warning') {
-      student.status = 'warning';
-      io.to(`s_${code}`).emit('student_update', {
-        id: socket.id, name: student.name, status: 'warning', ts: Date.now(), coords: null,
-      });
     } else if (status === 'idle' && prev !== 'idle') {
       if (prev === 'absent' && student.absenceStart) {
         const dur = Date.now() - student.absenceStart;
@@ -184,6 +187,20 @@ io.on('connection', (socket) => {
       student.coords = null;
       io.to(`s_${code}`).emit('student_update', {
         id: socket.id, name: student.name, status: 'idle', ts: Date.now(), coords: null,
+      });
+    } else if (
+      ['warning', 'look_away_short', 'look_away_long', 'drowsy_risk'].includes(status)
+    ) {
+      if (prev === 'absent') return;
+      if (prev === status) return;
+      student.status = status;
+      student.coords = safeCoords;
+      io.to(`s_${code}`).emit('student_update', {
+        id: socket.id,
+        name: student.name,
+        status,
+        ts: Date.now(),
+        coords: safeCoords,
       });
     }
   });

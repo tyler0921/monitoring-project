@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>MediaPipe Face Landmarker — 테스트</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0c0e13; color: #dde4f0; font-family: 'JetBrains Mono', monospace, sans-serif; }
+
+h1 { font-size: 14px; padding: 12px 16px; background: #12151c; border-bottom: 1px solid #1c2133; color: #00e5a0; letter-spacing: .1em; }
+
+.layout { display: grid; grid-template-columns: 640px 1fr; gap: 16px; padding: 16px; height: calc(100vh - 45px); }
+
+.cam-wrap { position: relative; background: #080a0f; border-radius: 10px; overflow: hidden; border: 1px solid #1c2133; }
+.cam-wrap video, .cam-wrap canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cam-wrap canvas { position: absolute; top: 0; left: 0; }
+.cam-wrap video { transform: scaleX(-1); }
+
+.panel { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+
+.card { background: #12151c; border: 1px solid #1c2133; border-radius: 8px; padding: 12px 14px; }
+.card-title { font-size: 9px; color: #3a4560; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+
+.metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
+.metric { display: flex; flex-direction: column; gap: 2px; }
+.metric-label { font-size: 9px; color: #3a4560; }
+.metric-value { font-size: 18px; font-weight: 700; transition: color .2s; }
+
+.status-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.badge { padding: 3px 10px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: .05em; }
+.badge-ok  { background: rgba(0,229,160,.15); color: #00e5a0; border: 1px solid rgba(0,229,160,.3); }
+.badge-warn { background: rgba(245,166,35,.15); color: #f5a623; border: 1px solid rgba(245,166,35,.3); }
+.badge-bad { background: rgba(255,77,77,.15);  color: #ff4d4d;  border: 1px solid rgba(255,77,77,.3); }
+.badge-off  { background: rgba(58,69,96,.2);   color: #3a4560;  border: 1px solid #1c2133; }
+
+.log { font-size: 10px; color: #3a4560; background: #0c0e13; border-radius: 6px; padding: 8px; height: 140px; overflow-y: auto; line-height: 1.7; }
+.log .ok  { color: #00e5a0; }
+.log .err { color: #ff4d4d; }
+.log .info { color: #f5a623; }
+
+.bar-wrap { background: #1c2133; border-radius: 3px; height: 5px; overflow: hidden; margin-top: 4px; }
+.bar-fill { height: 100%; border-radius: 3px; transition: width .2s, background .2s; }
+
+button { background: #00e5a0; color: #0c0e13; border: none; border-radius: 6px; padding: 8px 18px; font-size: 11px; font-weight: 700; cursor: pointer; letter-spacing: .06em; font-family: inherit; }
+button:disabled { opacity: .35; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<h1>FACETRACK — MediaPipe Face Landmarker 테스트</h1>
+<div class="layout">
+
+  <div class="cam-wrap">
+    <video id="vid" autoplay muted playsinline></video>
+    <canvas id="cvs"></canvas>
+  </div>
+
+  <div class="panel">
+
+    <div class="card">
+      <div class="card-title">컨트롤</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="btn-start">카메라 시작</button>
+        <span id="model-status" style="font-size:10px;color:#3a4560">모델 로딩 대기</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">상태 분류</div>
+      <div class="status-row" id="status-row">
+        <span class="badge badge-off" id="b-face">얼굴 없음</span>
+        <span class="badge badge-off" id="b-valid">유효 얼굴</span>
+        <span class="badge badge-off" id="b-gaze">시선</span>
+        <span class="badge badge-off" id="b-ear">눈</span>
+        <span class="badge badge-off" id="b-matrix">변환행렬</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">얼굴 존재</div>
+      <div class="metric-grid">
+        <div class="metric">
+          <span class="metric-label">Confidence (visibility avg)</span>
+          <span class="metric-value" id="v-conf" style="color:#3a4560">—</span>
+          <div class="bar-wrap"><div class="bar-fill" id="b-conf" style="width:0%"></div></div>
+        </div>
+        <div class="metric">
+          <span class="metric-label">BBox 면적 비율 (w×h)</span>
+          <span class="metric-value" id="v-area" style="color:#3a4560">—</span>
+          <div class="bar-wrap"><div class="bar-fill" id="b-area" style="width:0%"></div></div>
+        </div>
+        <div class="metric">
+          <span class="metric-label">랜드마크 수</span>
+          <span class="metric-value" id="v-lmcount" style="color:#3a4560">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">중심점 cx / cy</span>
+          <span class="metric-value" style="font-size:13px" id="v-cx">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">시선 & 머리 각도 (10프레임 이동평균)</div>
+      <div class="metric-grid">
+        <div class="metric">
+          <span class="metric-label">Yaw (좌우) °  [기준 ≤ 20]</span>
+          <span class="metric-value" id="v-yaw" style="color:#3a4560">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Pitch (상하) °  [기준 ≤ 15]</span>
+          <span class="metric-value" id="v-pitch" style="color:#3a4560">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">GazeOffsetX  [기준 ≤ 0.18]</span>
+          <span class="metric-value" id="v-gx" style="color:#3a4560">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">GazeOffsetY  [기준 ≤ 0.20]</span>
+          <span class="metric-value" id="v-gy" style="color:#3a4560">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Roll °</span>
+          <span class="metric-value" id="v-roll" style="color:#3a4560">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">행렬 소스</span>
+          <span class="metric-value" style="font-size:12px" id="v-matsrc">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">EAR 졸음 감지 (기준 &lt; 0.21)</div>
+      <div class="metric-grid">
+        <div class="metric">
+          <span class="metric-label">avgEAR</span>
+          <span class="metric-value" id="v-ear" style="color:#3a4560">—</span>
+          <div class="bar-wrap"><div class="bar-fill" id="b-ear2" style="width:0%"></div></div>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Left EAR</span>
+          <span class="metric-value" id="v-lear" style="color:#3a4560">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Right EAR</span>
+          <span class="metric-value" id="v-rear" style="color:#3a4560">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">눈 감김 누적 (earBelowMs)</span>
+          <span class="metric-value" style="font-size:14px" id="v-earMs" style="color:#3a4560">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">분류</span>
+          <span class="metric-value" style="font-size:12px" id="v-earclass" style="color:#3a4560">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">상태 로그</div>
+      <div class="log" id="status-log"><span style="color:#3a4560">기록 없음</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">로드 로그</div>
+      <div class="log" id="log"></div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver }
+  from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm';
+
+const MP_WASM  = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+
+const SAMPLE_MS   = 200;
+const SMOOTH_N    = 10;
+const RIGHT_EYE   = [33, 159, 158, 133, 153, 145];
+const LEFT_EYE    = [362, 385, 387, 263, 373, 380];
+
+let landmarker = null;
+let running    = false;
+let detInt     = null;
+let smoothBuf  = [];
+let earBelowMs = 0;
+let noFaceMs   = 0;
+let prevStatus = 'idle';
+let statusStart = null;
+
+const ABSENT_MS = 5000;
+
+const vid = document.getElementById('vid');
+const cvs = document.getElementById('cvs');
+const ctx = cvs.getContext('2d');
+
+// ── 유틸 ─────────────────────────────────────────────────────────────────────
+
+function log(msg, cls = '') {
+  const el = document.getElementById('log');
+  const ts = new Date().toLocaleTimeString();
+  el.innerHTML += `<span class="${cls}">[${ts}] ${msg}</span>\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function clamp(x, lo, hi) { return Math.min(hi, Math.max(lo, x)); }
+
+function dist2(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+function earOneSide(lm, idx) {
+  const p = idx.map(i => lm[i]);
+  const v1 = dist2(p[1], p[5]);
+  const v2 = dist2(p[2], p[4]);
+  const h  = dist2(p[0], p[3]);
+  return h < 1e-6 ? 0.3 : (v1 + v2) / (2 * h);
+}
+
+function computeEar(lm) {
+  if (!lm || lm.length < 400) return { avg: 0.28, left: 0.28, right: 0.28 };
+  const left  = earOneSide(lm, LEFT_EYE);
+  const right = earOneSide(lm, RIGHT_EYE);
+  return { avg: (left + right) / 2, left, right };
+}
+
+function computeGazeOffsets(lm) {
+  if (!lm || lm.length < 474) return { x: 0, y: 0 };
+  const L_OUT = lm[33], L_INN = lm[133];
+  const R_INN = lm[362], R_OUT = lm[263];
+  const iL = lm[468], iR = lm[473];
+  const lw = Math.abs(L_INN.x - L_OUT.x) + 1e-4;
+  const rw = Math.abs(R_OUT.x - R_INN.x) + 1e-4;
+  const lx = (iL.x - (L_OUT.x + L_INN.x) / 2) / lw;
+  const rx = (iR.x - (R_OUT.x + R_INN.x) / 2) / rw;
+  const ly = (iL.y - (L_OUT.y + L_INN.y) / 2) / lw;
+  const ry = (iR.y - (R_OUT.y + R_INN.y) / 2) / rw;
+  return {
+    x: ((lx + rx) / 2) * 0.35,
+    y: ((ly + ry) / 2) * 0.35,
+  };
+}
+
+function computeHeadDeg(lm, m16) {
+  function fromLm() {
+    const nose = lm[1], lEye = lm[33], rEye = lm[263];
+    const eyeMidX = (lEye.x + rEye.x) / 2;
+    const eyeMidY = (lEye.y + rEye.y) / 2;
+    const eyeW = dist2(lEye, rEye) + 1e-4;
+
+    // yaw: 코가 눈 중점 기준 좌우로 얼마나 벗어났는지
+    const yaw = clamp((Math.atan2(nose.x - eyeMidX, eyeW * 0.6) * 180) / Math.PI, -90, 90);
+
+    // pitch: 코와 눈 중점 간 y거리를 눈 가로폭으로 정규화
+    //   정면 ≈ noseRelY 0.28, 위 보면 감소, 아래 보면 증가
+    const noseRelY = (nose.y - eyeMidY) / eyeW;
+    const pitch = clamp((noseRelY - 0.28) * 150, -90, 90);
+
+    return { yaw, pitch, roll: 0, src: 'landmark' };
+  }
+  if (m16 && m16.length >= 16) {
+    const yaw   = (Math.atan2(m16[2],  m16[10]) * 180) / Math.PI;
+    const pitch = (Math.asin(clamp(-m16[6], -1, 1)) * 180) / Math.PI;
+    const roll  = (Math.atan2(m16[4], m16[5]) * 180) / Math.PI;
+    if (Number.isFinite(yaw) && Number.isFinite(pitch) && Math.abs(yaw) < 80 && Math.abs(pitch) < 80)
+      return { yaw, pitch, roll, src: 'matrix' };
+  }
+  return fromLm();
+}
+
+function bboxFromLm(lm) {
+  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+  for (const p of lm) {
+    if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y;
+  }
+  return { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, w: maxX - minX, h: maxY - minY };
+}
+
+function visibilityAvg(lm) {
+  // Face Landmarker는 visibility를 항상 0.0(숫자)으로 반환 → 평균이 0이 되므로 0이면 0.9로 대체
+  let s = 0, n = 0;
+  for (const p of lm) { if (typeof p.visibility === 'number') { s += p.visibility; n++; } }
+  return n > 0 ? (s / n || 0.9) : 0.9;
+}
+
+function mean(buf, key) {
+  if (!buf.length) return 0;
+  return buf.reduce((a, o) => a + o[key], 0) / buf.length;
+}
+
+const LOG_TAG = {
+  absent:        { label: '자리이탈', color: '#ff4d4d' },
+  gaze_away:     { label: '시선이탈', color: '#f5a623' },
+  drowsy_warning:{ label: '졸음경고', color: '#f5a623' },
+  drowsy_risk:   { label: '졸음위험', color: '#ff4d4d' },
+};
+
+function addStatusLog(status, s, e) {
+  const info = LOG_TAG[status];
+  if (!info) return;
+  const panel = document.getElementById('status-log');
+  panel.querySelector('span[style]')?.remove();
+  const dur = e - s;
+  const fmt = ts => {
+    const d = new Date(ts);
+    return `${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+  };
+  const row = document.createElement('div');
+  row.innerHTML = `<span style="color:#3a4560">${fmt(s)} → ${fmt(e)}</span> `
+    + `<span style="color:${info.color};font-weight:700">[${info.label}]</span> `
+    + `<span style="color:#dde4f0">${(dur / 1000).toFixed(1)}s</span>`;
+  panel.insertBefore(row, panel.firstChild);
+}
+
+function classifyEar(sec) {
+  if (sec < 0.1)  return { label: 'open',                  cls: 'badge-ok' };
+  if (sec <= 0.4) return { label: 'blink',                 cls: 'badge-ok' };
+  if (sec < 3)    return { label: 'between_blink_warning', cls: 'badge-warn' };
+  if (sec < 10)   return { label: 'micro_sleep_warning',   cls: 'badge-warn' };
+  return             { label: 'micro_sleep_RISK',          cls: 'badge-bad' };
+}
+
+// ── 화면 업데이트 ─────────────────────────────────────────────────────────────
+
+function el(id) { return document.getElementById(id); }
+
+function setVal(id, text, color) {
+  const e = el(id);
+  e.textContent = text;
+  if (color) e.style.color = color;
+}
+
+function setBar(id, pct, color) {
+  const e = el(id);
+  e.style.width  = `${clamp(pct, 0, 100)}%`;
+  e.style.background = color;
+}
+
+function setBadge(id, cls, text) {
+  const e = el(id);
+  e.className = `badge ${cls}`;
+  e.textContent = text;
+}
+
+function drawOverlay(lm, bbox) {
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+  if (!lm) return;
+
+  const sw = cvs.width, sh = cvs.height;
+  ctx.save();
+  ctx.scale(-1, 1);
+  ctx.translate(-sw, 0);
+
+  // bbox
+  const x  = (bbox.cx - bbox.w / 2) * sw;
+  const y  = (bbox.cy - bbox.h / 2) * sh;
+  ctx.strokeStyle = '#00e5a0';
+  ctx.lineWidth   = 2;
+  ctx.strokeRect(x, y, bbox.w * sw, bbox.h * sh);
+
+  // key landmarks
+  const KEY = [1, 33, 133, 263, 362, 468, 473, 152, 10];
+  ctx.fillStyle = '#f5a623';
+  for (const i of KEY) {
+    const p = lm[i];
+    if (!p) continue;
+    ctx.beginPath();
+    ctx.arc(p.x * sw, p.y * sh, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // EAR points
+  ctx.fillStyle = '#ff4d4d';
+  for (const i of [...LEFT_EYE, ...RIGHT_EYE]) {
+    const p = lm[i];
+    if (!p) continue;
+    ctx.beginPath();
+    ctx.arc(p.x * sw, p.y * sh, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ── 추론 루프 ─────────────────────────────────────────────────────────────────
+
+function detectFrame() {
+  if (!running || !landmarker || !vid.videoWidth) return;
+
+  let res;
+  try {
+    res = landmarker.detectForVideo(vid, performance.now());
+  } catch (e) {
+    log(`detectForVideo 오류: ${e.message}`, 'err');
+    return;
+  }
+
+  cvs.width  = vid.videoWidth;
+  cvs.height = vid.videoHeight;
+
+  const lm0 = res.faceLandmarks?.[0];
+
+  if (!lm0) {
+    noFaceMs += SAMPLE_MS;
+    earBelowMs = 0;
+    smoothBuf  = [];
+    drawOverlay(null, null);
+    setBadge('b-face',   'badge-bad', `얼굴 없음 ${(noFaceMs/1000).toFixed(1)}s`);
+    setBadge('b-valid',  'badge-off', '유효 얼굴 ✗');
+    setBadge('b-gaze',   'badge-off', '시선 —');
+    setBadge('b-ear',    'badge-off', '눈 —');
+    setBadge('b-matrix', 'badge-off', '행렬 —');
+    ['v-conf','v-area','v-lmcount','v-cx','v-yaw','v-pitch','v-gx','v-gy','v-roll','v-matsrc','v-ear','v-lear','v-rear','v-earMs','v-earclass']
+      .forEach(id => setVal(id, '—', '#3a4560'));
+    const curStatus = noFaceMs >= ABSENT_MS ? 'absent' : 'present';
+    if (curStatus !== prevStatus) {
+      const now = Date.now();
+      if (LOG_TAG[prevStatus] && statusStart) addStatusLog(prevStatus, statusStart, now);
+      statusStart = curStatus === 'absent' ? now : null;
+      prevStatus = curStatus;
+    }
+    return;
+  }
+
+  noFaceMs = 0;
+
+  // ── 얼굴 bbox ────────────────────────────────────────────────────────────
+  const bbox = bboxFromLm(lm0);
+  const conf = visibilityAvg(lm0);
+  const area = bbox.w * bbox.h;
+  const validFace = conf >= 0.7 && bbox.cx >= 0 && bbox.cx <= 1 && bbox.cy >= 0 && bbox.cy <= 1 && area >= 0.03;
+
+  setVal('v-conf',    conf.toFixed(3),                     conf >= 0.7 ? '#00e5a0' : '#f5a623');
+  setBar('b-conf',    conf * 100,                          conf >= 0.7 ? '#00e5a0' : '#f5a623');
+  setVal('v-area',    (area * 100).toFixed(1) + '%',       area >= 0.03 ? '#00e5a0' : '#ff4d4d');
+  setBar('b-area',    clamp(area * 500, 0, 100),           area >= 0.03 ? '#00e5a0' : '#ff4d4d');
+  setVal('v-lmcount', lm0.length);
+  setVal('v-cx',      `${bbox.cx.toFixed(3)} / ${bbox.cy.toFixed(3)}`);
+
+  setBadge('b-face',  'badge-ok',                         `얼굴 ${lm0.length}점`);
+  setBadge('b-valid', validFace ? 'badge-ok' : 'badge-bad', validFace ? '유효 얼굴 ✓' : '유효 얼굴 ✗');
+
+  // ── 변환 행렬 ─────────────────────────────────────────────────────────────
+  // instanceof Float32Array는 WASM 컨텍스트에서 실패할 수 있어 length 체크로 대체
+  const rawM = res.facialTransformationMatrixes?.[0];
+  const flat = rawM?.data?.length >= 16 ? rawM.data : undefined;
+  setBadge('b-matrix', flat ? 'badge-ok' : 'badge-warn', flat ? '행렬 ✓' : '행렬 없음');
+
+  // ── 시선 ──────────────────────────────────────────────────────────────────
+  const head  = computeHeadDeg(lm0, flat);
+  const gaze  = computeGazeOffsets(lm0);
+
+  smoothBuf.push({ yaw: head.yaw, pitch: head.pitch, roll: head.roll, gx: gaze.x, gy: gaze.y });
+  if (smoothBuf.length > SMOOTH_N) smoothBuf.shift();
+
+  const yawS   = mean(smoothBuf, 'yaw');
+  const pitchS = mean(smoothBuf, 'pitch');
+  const rollS  = mean(smoothBuf, 'roll');
+  const gxS    = mean(smoothBuf, 'gx');
+  const gyS    = mean(smoothBuf, 'gy');
+
+  const focused = Math.abs(yawS) <= 20 && Math.abs(pitchS) <= 15
+               && Math.abs(gxS)  <= 0.18 && Math.abs(gyS)  <= 0.20;
+
+  const yawCol   = Math.abs(yawS)   <= 20   ? '#00e5a0' : '#ff4d4d';
+  const pitchCol = Math.abs(pitchS) <= 15   ? '#00e5a0' : '#ff4d4d';
+  const gxCol    = Math.abs(gxS)    <= 0.18 ? '#00e5a0' : '#ff4d4d';
+  const gyCol    = Math.abs(gyS)    <= 0.20 ? '#00e5a0' : '#ff4d4d';
+
+  setVal('v-yaw',    yawS.toFixed(1)   + '°', yawCol);
+  setVal('v-pitch',  pitchS.toFixed(1) + '°', pitchCol);
+  setVal('v-roll',   rollS.toFixed(1)  + '°', '#dde4f0');
+  setVal('v-gx',     gxS.toFixed(3),          gxCol);
+  setVal('v-gy',     gyS.toFixed(3),          gyCol);
+  setVal('v-matsrc', head.src,                flat ? '#00e5a0' : '#f5a623');
+
+  setBadge('b-gaze', focused ? 'badge-ok' : 'badge-warn', focused ? '시선 집중' : '시선 이탈');
+
+  // ── EAR ───────────────────────────────────────────────────────────────────
+  const ear = computeEar(lm0);
+
+  if (ear.avg < 0.21) earBelowMs += SAMPLE_MS;
+  else                earBelowMs  = 0;
+
+  const earSec  = earBelowMs / 1000;
+  const earInfo = classifyEar(earSec);
+
+  // ── 상태 계산 & 전환 로그 ─────────────────────────────────────────────────
+  let curStatus = 'present';
+  if (!validFace)                                   curStatus = 'absent';
+  else if (earInfo.label === 'micro_sleep_RISK')    curStatus = 'drowsy_risk';
+  else if (earInfo.label === 'micro_sleep_warning') curStatus = 'drowsy_warning';
+  else if (!focused)                                curStatus = 'gaze_away';
+
+  if (curStatus !== prevStatus) {
+    const now = Date.now();
+    if (LOG_TAG[prevStatus] && statusStart) addStatusLog(prevStatus, statusStart, now);
+    statusStart = LOG_TAG[curStatus] ? now : null;
+    prevStatus = curStatus;
+  }
+
+  const earCol = ear.avg < 0.15 ? '#ff4d4d' : '#00e5a0';
+  setVal('v-ear',     ear.avg.toFixed(3),  earCol);
+  setVal('v-lear',    ear.left.toFixed(3), ear.left  < 0.21 ? '#ff4d4d' : '#00e5a0');
+  setVal('v-rear',    ear.right.toFixed(3),ear.right < 0.21 ? '#ff4d4d' : '#00e5a0');
+  setBar('b-ear2',    clamp(ear.avg * 300, 0, 100), earCol);
+  setVal('v-earMs',   `${earBelowMs}ms / ${earSec.toFixed(1)}s`);
+  setVal('v-earclass', earInfo.label);
+  el('v-earclass').className = '';
+  el('v-earclass').style.fontSize = '12px';
+  el('v-earclass').style.color = earInfo.cls === 'badge-ok' ? '#00e5a0'
+    : earInfo.cls === 'badge-warn' ? '#f5a623' : '#ff4d4d';
+
+  setBadge('b-ear', earInfo.cls, earInfo.label);
+
+  // ── 캔버스 ────────────────────────────────────────────────────────────────
+  drawOverlay(lm0, bbox);
+}
+
+// ── 초기화 ────────────────────────────────────────────────────────────────────
+
+async function loadModel() {
+  el('model-status').textContent = 'FilesetResolver 로딩 중…';
+  el('model-status').style.color = '#f5a623';
+  log('FilesetResolver.forVisionTasks() 호출', 'info');
+  try {
+    const t0 = performance.now();
+    const vision = await FilesetResolver.forVisionTasks(MP_WASM);
+    log(`FilesetResolver 완료 (${((performance.now()-t0)/1000).toFixed(1)}s)`, 'ok');
+
+    el('model-status').textContent = 'FaceLandmarker 모델 로딩 중…';
+    log('FaceLandmarker.createFromOptions() — GPU delegate 시도', 'info');
+
+    const opts = del => ({
+      baseOptions: { modelAssetPath: MP_MODEL, delegate: del },
+      runningMode: 'VIDEO',
+      numFaces: 1,
+      outputFaceBlendshapes: false,
+      outputFacialTransformationMatrixes: true,
+      minFaceDetectionConfidence: 0.5,
+      minFacePresenceConfidence: 0.55,
+    });
+
+    const t1 = performance.now();
+    try {
+      landmarker = await FaceLandmarker.createFromOptions(vision, opts('GPU'));
+      log(`FaceLandmarker 준비 완료 (GPU, ${((performance.now()-t1)/1000).toFixed(1)}s)`, 'ok');
+    } catch (e) {
+      log(`GPU 실패 → CPU 재시도: ${e.message}`, 'info');
+      landmarker = await FaceLandmarker.createFromOptions(vision, opts('CPU'));
+      log(`FaceLandmarker 준비 완료 (CPU, ${((performance.now()-t1)/1000).toFixed(1)}s)`, 'ok');
+    }
+
+    el('model-status').textContent = '모델 준비 완료';
+    el('model-status').style.color = '#00e5a0';
+    el('btn-start').disabled = false;
+  } catch (e) {
+    log(`모델 로딩 실패: ${e.message}`, 'err');
+    el('model-status').textContent = '모델 로딩 실패';
+    el('model-status').style.color = '#ff4d4d';
+  }
+}
+
+el('btn-start').disabled = true;
+el('btn-start').addEventListener('click', async () => {
+  if (running) {
+    running = false;
+    clearInterval(detInt);
+    vid.srcObject?.getTracks().forEach(t => t.stop());
+    vid.srcObject = null;
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    el('btn-start').textContent = '카메라 시작';
+    log('카메라 중지', 'info');
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+    vid.srcObject = stream;
+    await new Promise(r => { vid.onloadedmetadata = r; });
+    cvs.width  = vid.videoWidth  || 640;
+    cvs.height = vid.videoHeight || 480;
+    running    = true;
+    earBelowMs = 0;
+    noFaceMs   = 0;
+    prevStatus = 'idle';
+    statusStart = null;
+    smoothBuf  = [];
+    document.getElementById('status-log').innerHTML = '<span style="color:#3a4560">기록 없음</span>';
+    detInt     = setInterval(detectFrame, SAMPLE_MS);
+    el('btn-start').textContent = '중지';
+    log(`카메라 시작 (${vid.videoWidth}×${vid.videoHeight})`, 'ok');
+  } catch (e) {
+    log(`카메라 오류: ${e.message}`, 'err');
+  }
+});
+
+loadModel();
+</script>
+</body>
+</html>

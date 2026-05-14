@@ -74,10 +74,46 @@ function renderCard(st) {
     card.id = `sc-${st.id}`;
     document.getElementById('sgrid').appendChild(card);
   }
-  const statusCls = { present: '', warning: 'warning', absent: 'absent', offline: '', idle: '' };
-  const avCls = { present: 'av-p', warning: 'av-w', absent: 'av-a', offline: 'av-o', idle: 'av-o' };
-  const badgeCls = { present: 'bp', warning: 'bw', absent: 'ba', offline: 'bo', idle: 'bo' };
-  const badgeTx = { present: 'PRESENT', warning: 'WARNING', absent: 'ABSENT', offline: 'OFFLINE', idle: 'IDLE' };
+  const statusCls = {
+    present: '',
+    warning: 'warning',
+    absent: 'absent',
+    offline: '',
+    idle: '',
+    look_away_short: 'warning',
+    look_away_long: 'warning',
+    drowsy_risk: 'absent',
+  };
+  const avCls = {
+    present: 'av-p',
+    warning: 'av-w',
+    absent: 'av-a',
+    offline: 'av-o',
+    idle: 'av-o',
+    look_away_short: 'av-w',
+    look_away_long: 'av-w',
+    drowsy_risk: 'av-a',
+  };
+  const badgeCls = {
+    present: 'bp',
+    warning: 'bw',
+    absent: 'ba',
+    offline: 'bo',
+    idle: 'bo',
+    look_away_short: 'bw',
+    look_away_long: 'bw',
+    drowsy_risk: 'ba',
+  };
+  const badgeTx = {
+    present: 'PRESENT',
+    warning: 'WARN',
+    absent: 'ABSENT',
+    offline: 'OFFLINE',
+    idle: 'IDLE',
+    look_away_short: '시선↓',
+    look_away_long: '시선이탈',
+    drowsy_risk: '졸음',
+  };
   const ini = esc(st.name.charAt(0));
   const now = Date.now();
   const sessMs = st.joinTime ? now - st.joinTime : 1;
@@ -290,7 +326,7 @@ function startSession(name, serverUrl) {
       st.absenceStart = null;
       addAlert(name, 'ret', dur, byMotion);
       beep('ret');
-    } else if (status === 'present' || status === 'warning') {
+    } else if (status === 'present' || status === 'warning' || status === 'look_away_short' || status === 'look_away_long' || status === 'drowsy_risk') {
       st.absenceStart = null;
     } else if (status === 'offline') {
       st.absenceStart = null;
